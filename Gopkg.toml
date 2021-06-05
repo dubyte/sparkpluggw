@@ -24,11 +24,9 @@
 #   go-tests = true
 #   unused-packages = true
 
-required = ["github.com/prometheus/common@0.25.0"]
-
 [[override]]
   name = "github.com/prometheus/common"
-  version = "=0.25.0"
+  version = "v0.25.0"
 
 [[constraint]]
   name = "github.com/eclipse/paho.mqtt.golang"
