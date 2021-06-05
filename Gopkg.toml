@@ -32,7 +32,7 @@
   name = "github.com/prometheus/client_golang"
   branch = "master"
 
-[[constraint]]
+[[override]]
   name = "github.com/prometheus/common"
   version = "=0.25.0"
 
