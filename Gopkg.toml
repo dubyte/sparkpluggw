@@ -25,10 +25,6 @@
 #   unused-packages = true
 
 [[constraint]]
- name = "github.com/IHI-Energy-Storage/sparkpluggw"
- branch = "test_package"
-
-[[constraint]]
   name = "github.com/eclipse/paho.mqtt.golang"
   version = "1.1.1"
 
@@ -38,7 +34,7 @@
 
 [[constraint]]
   name = "github.com/prometheus/common"
-  version = "0.25.0"
+  version = "=0.25.0"
 
 [[constraint]]
   name = "gopkg.in/alecthomas/kingpin.v2"
