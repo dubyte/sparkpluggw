@@ -10,9 +10,9 @@ import (
 
 	pb "github.com/IHI-Energy-Storage/sparkpluggw/Sparkplug"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
+	"github.com/go-kit/log/level"
 	"github.com/golang/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/log"
 )
 
 var mutex sync.RWMutex
@@ -87,7 +87,7 @@ func initSparkPlugExporter(e **spplugExporter) {
 	// create a MQTT client
 	options := mqtt.NewClientOptions()
 
-	log.Infof("Connecting to %v", *brokerAddress)
+	level.Info(logger).Log("Connecting to %v", *brokerAddress)
 
 	// Set broker and client options
 	options.AddBroker(*brokerAddress)
@@ -118,12 +118,13 @@ func initSparkPlugExporter(e **spplugExporter) {
 
 	(*e).client = mqtt.NewClient(options)
 
-	log.Debugf("Initializing Exporter Metrics and Data\n")
+	level.Debug(logger).Log("Initializing Exporter Metrics and Data\n")
 
 	(*e).initializeMetricsAndData()
 
 	if token := (*e).client.Connect(); token.Wait() && token.Error() != nil {
-		log.Fatal(token.Error())
+		level.Error(logger).Log(token.Error())
+		os.Exit(1)
 	}
 
 	(*e).client.Subscribe(*topic, 2, (*e).receiveMessage())
@@ -182,18 +183,18 @@ func (e *spplugExporter) receiveMessage() func(mqtt.Client, mqtt.Message) {
 		mutex.Lock()
 		defer mutex.Unlock()
 
-		var   pbMsg pb.Payload
-		var   eventString string
+		var pbMsg pb.Payload
+		var eventString string
 
 		// Unmarshal MQTT message into Google Protocol Buffer
 		if err := proto.Unmarshal(m.Payload(), &pbMsg); err != nil {
-			log.Errorf("Error decoding GPB, message: %v\n", err)
+			level.Error(logger).Log("Error decoding GPB, message: %v\n", err)
 			return
 		}
 
 		topic := m.Topic()
-		log.Debugf("Received message: %s\n", topic)
-		log.Debugf("%s\n", pbMsg.String())
+		level.Debug(logger).Log("Received message: %s\n", topic)
+		level.Debug(logger).Log("%s\n", pbMsg.String())
 
 		// Get the labels and value for the labels from the topic and constants
 		siteLabels, siteLabelValues, processMetric := prepareLabelsAndValues(topic)
@@ -208,7 +209,7 @@ func (e *spplugExporter) receiveMessage() func(mqtt.Client, mqtt.Message) {
 			siteLabelValues["sp_edge_node_id"])
 
 		metricList := pbMsg.GetMetrics()
-		log.Debugf("Received message in processMetric: %s\n", metricList)
+		level.Debug(logger).Log("Received message in processMetric: %s\n", metricList)
 
 		for _, metric := range metricList {
 
@@ -229,7 +230,7 @@ func (e *spplugExporter) receiveMessage() func(mqtt.Client, mqtt.Message) {
 
 			if err != nil {
 				if metricName != "Device Control/Rebirth" {
-					log.Errorf("Error: %s %s %v  \n", siteLabelValues["sp_edge_node_id"], metricName, err)
+					level.Error(logger).Log("Error: %s %s %v  \n", siteLabelValues["sp_edge_node_id"], metricName, err)
 					e.counterMetrics[SPPushInvalidMetric].With(siteLabelValues).Inc()
 				}
 
@@ -286,13 +287,13 @@ func (e *spplugExporter) receiveMessage() func(mqtt.Client, mqtt.Message) {
 					newMetric)
 			}
 			if metricVal, err := convertMetricToFloat(metric); err != nil {
-				log.Debugf("Error %v converting data type for metric %s\n",
+				level.Debug(logger).Log("Error %v converting data type for metric %s\n",
 					err, metricName)
 			} else {
-				log.Infof("%s: name (%s) value (%g) labels: (%s)\n",
+				level.Info(logger).Log("%s: name (%s) value (%g) labels: (%s)\n",
 					eventString, metricName, metricVal, metricLabelValues)
 
-				log.Debugf("metriclabels: (%s) siteLabelValues: (%s)\n",
+				level.Debug(logger).Log("metriclabels: (%s) siteLabelValues: (%s)\n",
 					metricLabels, siteLabelValues)
 
 				e.metrics[metricName][labelIndex].prommetric.With(metricLabelValues).Set(metricVal)
@@ -316,7 +317,7 @@ func (e *spplugExporter) evaluateEdgeNode(c mqtt.Client, namespace string,
 		edgeNodeList[edgeNode] = true
 		e.reincarnate(namespace, group, nodeID)
 	} else {
-		log.Debugf("Known edge node: %s\n", edgeNode)
+		level.Debug(logger).Log("Known edge node: %s\n", edgeNode)
 	}
 }
 
@@ -345,7 +346,7 @@ func (e *spplugExporter) reincarnate(namespace string, group string,
 
 		for true {
 			if e.client.IsConnectionOpen() {
-				log.Infof("Reincarnate: %s\n", topic)
+				level.Info(logger).Log("Reincarnate: %s\n", topic)
 
 				e.counterMetrics[SPReincarnationAttempts].
 					With(labelValues).Inc()
@@ -381,7 +382,7 @@ func (e *spplugExporter) initializeMetricsAndData() {
 	serviceLabels, _ := getServiceLabelSetandValues()
 	edgeNodeLabels := getNodeLabelSet()
 
-	log.Debugf(NewMetricString, SPPushTotalMetric)
+	level.Debug(logger).Log(NewMetricString, SPPushTotalMetric)
 
 	e.counterMetrics[SPPushTotalMetric] = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -391,7 +392,7 @@ func (e *spplugExporter) initializeMetricsAndData() {
 		siteLabels,
 	)
 
-	log.Debugf(NewMetricString, SPLastTimePushedMetric)
+	level.Debug(logger).Log(NewMetricString, SPLastTimePushedMetric)
 	var test prometheusmetric
 	test.prommetric = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
@@ -402,7 +403,7 @@ func (e *spplugExporter) initializeMetricsAndData() {
 	)
 	e.metrics[SPLastTimePushedMetric] = append(e.metrics[SPLastTimePushedMetric], test)
 
-	log.Debugf(NewMetricString, SPPushInvalidMetric)
+	level.Debug(logger).Log(NewMetricString, SPPushInvalidMetric)
 
 	e.counterMetrics[SPPushInvalidMetric] = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -412,7 +413,7 @@ func (e *spplugExporter) initializeMetricsAndData() {
 		siteLabels,
 	)
 
-	log.Debugf(NewMetricString, SPConnectionCount)
+	level.Debug(logger).Log(NewMetricString, SPConnectionCount)
 
 	e.counterMetrics[SPConnectionCount] = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -422,7 +423,7 @@ func (e *spplugExporter) initializeMetricsAndData() {
 		serviceLabels,
 	)
 
-	log.Debugf(NewMetricString, SPDisconnectionCount)
+	level.Debug(logger).Log(NewMetricString, SPDisconnectionCount)
 
 	e.counterMetrics[SPDisconnectionCount] = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -432,7 +433,7 @@ func (e *spplugExporter) initializeMetricsAndData() {
 		serviceLabels,
 	)
 
-	log.Debugf(NewMetricString, SPReincarnationAttempts)
+	level.Debug(logger).Log(NewMetricString, SPReincarnationAttempts)
 
 	e.counterMetrics[SPReincarnationAttempts] = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -442,7 +443,7 @@ func (e *spplugExporter) initializeMetricsAndData() {
 		edgeNodeLabels,
 	)
 
-	log.Debugf(NewMetricString, SPReincarnationFailures)
+	level.Debug(logger).Log(NewMetricString, SPReincarnationFailures)
 
 	e.counterMetrics[SPReincarnationFailures] = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -452,7 +453,7 @@ func (e *spplugExporter) initializeMetricsAndData() {
 		edgeNodeLabels,
 	)
 
-	log.Debugf(NewMetricString, SPReincarnationSuccess)
+	level.Debug(logger).Log(NewMetricString, SPReincarnationSuccess)
 
 	e.counterMetrics[SPReincarnationSuccess] = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -462,7 +463,7 @@ func (e *spplugExporter) initializeMetricsAndData() {
 		edgeNodeLabels,
 	)
 
-	log.Debugf(NewMetricString, SPReincarnationDelay)
+	level.Debug(logger).Log(NewMetricString, SPReincarnationDelay)
 
 	e.counterMetrics[SPReincarnationDelay] = prometheus.NewCounterVec(
 		prometheus.CounterOpts{

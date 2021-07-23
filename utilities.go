@@ -6,9 +6,9 @@ import (
 
 	pb "github.com/IHI-Energy-Storage/sparkpluggw/Sparkplug"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
+	"github.com/go-kit/log/level"
 	"github.com/golang/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 )
 
@@ -28,13 +28,13 @@ func sendMQTTMsg(c mqtt.Client, pbMsg *pb.Payload,
 	msg, err := proto.Marshal(pbMsg)
 
 	if err != nil {
-		log.Warnf("Failed to Marshall: %s\n", err)
+		level.Warn(logger).Log("Failed to Marshall: %s\n", err)
 		return false
 	}
 
 	token := c.Publish(topic, 0, false, msg)
 	token.Wait()
-	log.Debugf("%s\n", pbMsg.String())
+	level.Debug(logger).Log("%s\n", pbMsg.String())
 
 	return true
 }
@@ -109,18 +109,18 @@ func prepareLabelsAndValues(topic string) ([]string, prometheus.Labels, bool) {
 	t := strings.TrimPrefix(topic, *prefix)
 	t = strings.TrimPrefix(t, "/")
 	parts := strings.Split(t, "/")
-	
+
 	// 6.1.3 covers 9 message types, only process device data
 	// Sparkplug puts 5 key namespacing elements in the topic name
 	// these are being parsed and will be added as metric labels
 
 	if (parts[2] == "DDATA") || (parts[2] == "DBIRTH") {
 		if len(parts) != 5 {
-			log.Debugf("Ignoring topic %s, does not comply with Sparkspec\n", t)
+			level.Debug(logger).Log("Ignoring topic %s, does not comply with Sparkspec\n", t)
 			return nil, nil, false
 		}
 	} else {
-		log.Debugf("Ignoring non-device metric data: %s\n", parts[2])
+		level.Debug(logger).Log("Ignoring non-device metric data: %s\n", parts[2])
 		return nil, nil, false
 	}
 
@@ -178,6 +178,7 @@ func getNodeLabelSetandValues(namespace string, group string,
 func getNodeLabelSet() []string {
 	return []string{SPNamespace, SPGroupID, SPEdgeNodeID}
 }
+
 // This function acceptys MQTT metric message,
 // extracts out the nested folders(if any), add those folder names in Key value labels
 // and return label value sets, metrics wrt to those labelvalues and error(if any)
@@ -195,7 +196,7 @@ func getMetricName(metric *pb.Payload_Metric) ([]string, string, error) {
 			labelvalues = append(labelvalues, parts[metlen])
 
 		}
-		log.Debugf("Received message for labelvalues: %s\n", labelvalues)
+		level.Debug(logger).Log("Received message for labelvalues: %s\n", labelvalues)
 	}
 	metricNameL := model.LabelValue(metricName)
 
