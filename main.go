@@ -60,9 +60,10 @@ func main() {
 	prometheus.MustRegister(exporter)
 
 	http.Handle(*metricsPath, promhttp.Handler())
-	http.HandleFunc("/test", test)
 	level.Info(logger).Log("msg", fmt.Sprintf("Listening on %s", *listenAddress))
-	write := remotewrite.Writer(logger)
+
+	c, err := remotewrite.Client("http://localhost:9090/api/v1/write", 30*time.Second, "sparkplug exporter", true)
+	write := remotewrite.WriteFunc(c, logger)
 	go func() {
 		for {
 			write()
@@ -70,53 +71,10 @@ func main() {
 		}
 
 	}()
-	err := http.ListenAndServe(*listenAddress, nil)
+
+	err = http.ListenAndServe(*listenAddress, nil)
 	if err != nil {
 		level.Error(logger).Log("msg", err)
 		os.Exit(1)
 	}
-}
-
-// We could get the tests repo and add our exporter to check the compliance.
-// https://github.com/prometheus/compliance/tree/main/remote_write
-func test(w http.ResponseWriter, _ *http.Request) {
-	write := remotewrite.Writer(logger)
-
-	write()
-
-	//timestamp := time.Now().Unix()
-	//
-	//wReq, err := remotewrite.BuildWriteRequest(prometheus.DefaultGatherer, timestamp)
-	//if err != nil {
-	//	level.Error(logger).Log("msg", fmt.Sprintf("error while building the write request: %s", err))
-	//}
-	//
-	//data, err := proto.Marshal(&wReq)
-	//if err != nil {
-	//	level.Error(logger).Log("msg", fmt.Sprintf("error while marshalling write request: %s", err))
-	//	return
-	//}
-	//
-	//compressed := snappy.Encode(nil, data)
-	//
-	////////////////////// test only /////////////////////
-	//reqBuf, err := snappy.Decode(nil, compressed)
-	//if err != nil {
-	//	level.Error(logger).Log("msg", fmt.Sprintf("error while decoding snappy compressed request: %s", err))
-	//	return
-	//}
-	//
-	//var req prompb.WriteRequest
-	//
-	//if err := proto.Unmarshal(reqBuf, &req); err != nil {
-	//	level.Error(logger).Log("msg", fmt.Sprintf("error while unmarshalling remote request: %s", err))
-	//}
-	//level.Info(logger).Log("msg", fmt.Sprintf("request: %s", req))
-	/////////////////////////////////////////////////////
-	//
-	//// To send metrics
-	////https://github.com/prometheus/prometheus/blob/main/storage/remote/client.go
-	////c := remote.NewClient()
-	////
-	////fmt.Println(c)
 }
