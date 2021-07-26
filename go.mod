@@ -3,7 +3,6 @@ module github.com/IHI-Energy-Storage/sparkpluggw
 go 1.16
 
 require (
-	github.com/HdrHistogram/hdrhistogram-go v1.1.0 // indirect
 	github.com/containerd/containerd v1.5.3 // indirect
 	github.com/eclipse/paho.mqtt.golang v1.3.4
 	github.com/go-kit/log v0.1.0
