@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
 	pb "github.com/IHI-Energy-Storage/sparkpluggw/Sparkplug"
@@ -28,13 +29,13 @@ func sendMQTTMsg(c mqtt.Client, pbMsg *pb.Payload,
 	msg, err := proto.Marshal(pbMsg)
 
 	if err != nil {
-		level.Warn(logger).Log("Failed to Marshall: %s\n", err)
+		level.Warn(logger).Log("msg", fmt.Sprintf("Failed to Marshall: %s", err))
 		return false
 	}
 
 	token := c.Publish(topic, 0, false, msg)
 	token.Wait()
-	level.Debug(logger).Log("%s\n", pbMsg.String())
+	level.Debug(logger).Log("msg", fmt.Sprintf("%s", pbMsg.String()))
 
 	return true
 }
@@ -116,11 +117,11 @@ func prepareLabelsAndValues(topic string) ([]string, prometheus.Labels, bool) {
 
 	if (parts[2] == "DDATA") || (parts[2] == "DBIRTH") {
 		if len(parts) != 5 {
-			level.Debug(logger).Log("Ignoring topic %s, does not comply with Sparkspec\n", t)
+			level.Debug(logger).Log("msg", fmt.Sprintf("Ignoring topic %s, does not comply with Sparkspec", t))
 			return nil, nil, false
 		}
 	} else {
-		level.Debug(logger).Log("Ignoring non-device metric data: %s\n", parts[2])
+		level.Debug(logger).Log("msg", fmt.Sprintf("Ignoring non-device metric data: %s", parts[2]))
 		return nil, nil, false
 	}
 
@@ -196,7 +197,7 @@ func getMetricName(metric *pb.Payload_Metric) ([]string, string, error) {
 			labelvalues = append(labelvalues, parts[metlen])
 
 		}
-		level.Debug(logger).Log("Received message for labelvalues: %s\n", labelvalues)
+		level.Debug(logger).Log("msg", fmt.Sprintf("Received message for labelvalues: %s", labelvalues))
 	}
 	metricNameL := model.LabelValue(metricName)
 
