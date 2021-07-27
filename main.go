@@ -45,7 +45,6 @@ var (
 
 	mqttDebug = kingpin.Flag("mqtt.debug", "Enable MQTT debugging").
 			Default("false").String()
-
 	progname = "sparkpluggw"
 	exporter *spplugExporter
 	logger   log.Logger

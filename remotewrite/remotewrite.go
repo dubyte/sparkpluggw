@@ -20,6 +20,8 @@ import (
 	"github.com/prometheus/prometheus/storage/remote"
 )
 
+// TODO accept extra labels
+
 //Client builds a config base on the parameter sent and return a remote.client using the config.
 func Client(rawurl string, timeout time.Duration, userAgent string, retryOnRateLimit bool) (remote.WriteClient, error) {
 	u, err := url.Parse(rawurl)
@@ -67,6 +69,7 @@ func BuildWriteRequest(g prometheus.Gatherer, timeStamp int64) (prompb.WriteRequ
 		return req, fmt.Errorf("gatherer.Gather err: %w", err)
 	}
 
+	// metric families are the metrics with the same name and type but could have different labels.
 	for _, mf := range mfs {
 		for _, metric := range mf.GetMetric() {
 
@@ -119,7 +122,7 @@ func BuildWriteRequest(g prometheus.Gatherer, timeStamp int64) (prompb.WriteRequ
 					req.Timeseries = append(req.Timeseries, ts)
 				}
 
-				// summary sum
+				// add summary sum
 				{
 					ts, err := buildPrometheusTS(timeStamp, fmt.Sprintf("%s_sum", mf.GetName()), metric.GetSummary().GetSampleSum(), commonLabels)
 					if err != nil {
@@ -128,7 +131,7 @@ func BuildWriteRequest(g prometheus.Gatherer, timeStamp int64) (prompb.WriteRequ
 					req.Timeseries = append(req.Timeseries, ts)
 				}
 
-				// summary count
+				// add summary count
 				{
 					ts, err := buildPrometheusTS(timeStamp, fmt.Sprintf("%s_count", mf.GetName()), float64(metric.GetSummary().GetSampleCount()), commonLabels)
 					if err != nil {
@@ -150,7 +153,7 @@ func BuildWriteRequest(g prometheus.Gatherer, timeStamp int64) (prompb.WriteRequ
 					req.Timeseries = append(req.Timeseries, ts)
 				}
 
-				// histogram sum
+				// add histogram sum
 				{
 					ts, err := buildPrometheusTS(timeStamp, fmt.Sprintf("%s_sum", mf.GetName()), metric.GetHistogram().GetSampleSum(), commonLabels)
 					if err != nil {
@@ -159,7 +162,7 @@ func BuildWriteRequest(g prometheus.Gatherer, timeStamp int64) (prompb.WriteRequ
 					req.Timeseries = append(req.Timeseries, ts)
 				}
 
-				// histogram count
+				// add histogram count
 				{
 					ts, err := buildPrometheusTS(timeStamp, fmt.Sprintf("%s_count", mf.GetName()), float64(metric.GetHistogram().GetSampleCount()), commonLabels)
 					if err != nil {
@@ -196,6 +199,8 @@ func WriteFunc(client remote.WriteClient, logger log.Logger) func() {
 		}
 
 		compressed := snappy.Encode(nil, data)
+
+		// Store adds headers like the contentType, encoding.
 		err = client.Store(context.Background(), compressed)
 		if err != nil {
 			level.Error(logger).Log("msg", fmt.Sprintf("error while storing Time series: %s", err))
