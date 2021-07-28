@@ -20,9 +20,40 @@ import (
 	"github.com/prometheus/prometheus/storage/remote"
 )
 
-// TODO accept extra labels
+type Writer struct {
+	Client      remote.WriteClient
+	Logger      log.Logger
+	Gatherer    prometheus.Gatherer
+	ExtraLabels []prompb.Label
+}
 
-//Client builds a config base on the parameter sent and return a remote.client using the config.
+//Write get the metrics from the gatherer using the current time it creates a remote write request
+// after marshall it and compress it using snappy it use the client to send the request.
+func (w Writer) Write() {
+	timestamp := time.Now().UnixNano() / int64(time.Millisecond)
+
+	req, err := WriteRequest(w.Gatherer, timestamp, w.ExtraLabels...)
+	if err != nil {
+		level.Error(w.Logger).Log("msg", fmt.Sprintf("error while building remote write request: %s", err))
+		return
+	}
+
+	data, err := proto.Marshal(&req)
+	if err != nil {
+		level.Error(w.Logger).Log("msg", fmt.Sprintf("error while marshalling write request: %s", err))
+		return
+	}
+
+	compressed := snappy.Encode(nil, data)
+
+	// Store adds headers like the contentType, encoding.
+	err = w.Client.Store(context.Background(), compressed)
+	if err != nil {
+		level.Error(w.Logger).Log("msg", fmt.Sprintf("error while storing Time series: %s", err))
+	}
+}
+
+//Client builds a config base on the parameter sent and return a remote.client using that config.
 func Client(rawurl string, timeout time.Duration, userAgent string, retryOnRateLimit bool) (remote.WriteClient, error) {
 	u, err := url.Parse(rawurl)
 	if err != nil {
@@ -59,9 +90,9 @@ func ClientFromConfig(cfg remote.ClientConfig, userAgent string) (remote.WriteCl
 	return c, nil
 }
 
-//BuildWriteRequest get the metric families from the gatherer using passed timestamp in unix miliseconds time and returns
+//WriteRequest get the metric families from the gatherer using passed timestamp in unix miliseconds time and returns
 // a remoteWrite request
-func BuildWriteRequest(g prometheus.Gatherer, timeStamp int64) (prompb.WriteRequest, error) {
+func WriteRequest(g prometheus.Gatherer, timeStamp int64, extraLabels ...prompb.Label) (prompb.WriteRequest, error) {
 	var req prompb.WriteRequest
 
 	mfs, err := g.Gather()
@@ -74,7 +105,7 @@ func BuildWriteRequest(g prometheus.Gatherer, timeStamp int64) (prompb.WriteRequ
 		for _, metric := range mf.GetMetric() {
 
 			//TODO get the instance from config
-			commonLabels := prometheusTSLabels("localhost:9337", metric)
+			commonLabels := prometheusTSLabels(metric, extraLabels)
 
 			switch mf.GetType() {
 
@@ -82,9 +113,9 @@ func BuildWriteRequest(g prometheus.Gatherer, timeStamp int64) (prompb.WriteRequ
 				if metric.GetCounter() == nil {
 					return req, fmt.Errorf("metric %s is %s but Get%s returned null", mf.GetName(), mf.GetType(), mf.GetType())
 				}
-				ts, err := buildPrometheusTS(timeStamp, mf.GetName(), metric.GetCounter().GetValue(), commonLabels)
+				ts, err := prometheusTS(timeStamp, mf.GetName(), metric.GetCounter().GetValue(), commonLabels)
 				if err != nil {
-					return req, fmt.Errorf("buildPrometheusTS err: %w", err)
+					return req, fmt.Errorf("prometheusTS err: %w", err)
 				}
 				req.Timeseries = append(req.Timeseries, ts)
 
@@ -92,9 +123,9 @@ func BuildWriteRequest(g prometheus.Gatherer, timeStamp int64) (prompb.WriteRequ
 				if metric.GetGauge() == nil {
 					return req, fmt.Errorf("metric %s is %s but Get%s returned null", mf.GetName(), mf.GetType(), mf.GetType())
 				}
-				ts, err := buildPrometheusTS(timeStamp, mf.GetName(), metric.GetGauge().GetValue(), commonLabels)
+				ts, err := prometheusTS(timeStamp, mf.GetName(), metric.GetGauge().GetValue(), commonLabels)
 				if err != nil {
-					return req, fmt.Errorf("buildPrometheusTS err: %w", err)
+					return req, fmt.Errorf("prometheusTS err: %w", err)
 				}
 				req.Timeseries = append(req.Timeseries, ts)
 
@@ -102,9 +133,9 @@ func BuildWriteRequest(g prometheus.Gatherer, timeStamp int64) (prompb.WriteRequ
 				if metric.GetUntyped() == nil {
 					return req, fmt.Errorf("metric %s is %s but Get%s returned null", mf.GetName(), mf.GetType(), mf.GetType())
 				}
-				ts, err := buildPrometheusTS(timeStamp, mf.GetName(), metric.GetUntyped().GetValue(), commonLabels)
+				ts, err := prometheusTS(timeStamp, mf.GetName(), metric.GetUntyped().GetValue(), commonLabels)
 				if err != nil {
-					return req, fmt.Errorf("buildPrometheusTS err: %w", err)
+					return req, fmt.Errorf("prometheusTS err: %w", err)
 				}
 				req.Timeseries = append(req.Timeseries, ts)
 
@@ -115,27 +146,27 @@ func BuildWriteRequest(g prometheus.Gatherer, timeStamp int64) (prompb.WriteRequ
 
 				for _, q := range metric.GetSummary().GetQuantile() {
 					labels := append(commonLabels, prompb.Label{Name: "quantile", Value: fmt.Sprintf("%f", q.GetQuantile())})
-					ts, err := buildPrometheusTS(timeStamp, fmt.Sprintf("%s_sum", mf.GetName()), q.GetValue(), labels)
+					ts, err := prometheusTS(timeStamp, fmt.Sprintf("%s_sum", mf.GetName()), q.GetValue(), labels)
 					if err != nil {
-						return req, fmt.Errorf("buildPrometheusTS err: %w", err)
+						return req, fmt.Errorf("prometheusTS err: %w", err)
 					}
 					req.Timeseries = append(req.Timeseries, ts)
 				}
 
 				// add summary sum
 				{
-					ts, err := buildPrometheusTS(timeStamp, fmt.Sprintf("%s_sum", mf.GetName()), metric.GetSummary().GetSampleSum(), commonLabels)
+					ts, err := prometheusTS(timeStamp, fmt.Sprintf("%s_sum", mf.GetName()), metric.GetSummary().GetSampleSum(), commonLabels)
 					if err != nil {
-						return req, fmt.Errorf("buildPrometheusTS err: %w", err)
+						return req, fmt.Errorf("prometheusTS err: %w", err)
 					}
 					req.Timeseries = append(req.Timeseries, ts)
 				}
 
 				// add summary count
 				{
-					ts, err := buildPrometheusTS(timeStamp, fmt.Sprintf("%s_count", mf.GetName()), float64(metric.GetSummary().GetSampleCount()), commonLabels)
+					ts, err := prometheusTS(timeStamp, fmt.Sprintf("%s_count", mf.GetName()), float64(metric.GetSummary().GetSampleCount()), commonLabels)
 					if err != nil {
-						return req, fmt.Errorf("buildPrometheusTS err: %w", err)
+						return req, fmt.Errorf("prometheusTS err: %w", err)
 					}
 					req.Timeseries = append(req.Timeseries, ts)
 				}
@@ -146,27 +177,27 @@ func BuildWriteRequest(g prometheus.Gatherer, timeStamp int64) (prompb.WriteRequ
 
 				for _, bucket := range metric.GetHistogram().GetBucket() {
 					labels := append(commonLabels, prompb.Label{Name: "le", Value: fmt.Sprintf("%f", bucket.GetUpperBound())})
-					ts, err := buildPrometheusTS(timeStamp, fmt.Sprintf("%s_sum", mf.GetName()), float64(bucket.GetCumulativeCount()), labels)
+					ts, err := prometheusTS(timeStamp, fmt.Sprintf("%s_sum", mf.GetName()), float64(bucket.GetCumulativeCount()), labels)
 					if err != nil {
-						return req, fmt.Errorf("buildPrometheusTS err: %w", err)
+						return req, fmt.Errorf("prometheusTS err: %w", err)
 					}
 					req.Timeseries = append(req.Timeseries, ts)
 				}
 
 				// add histogram sum
 				{
-					ts, err := buildPrometheusTS(timeStamp, fmt.Sprintf("%s_sum", mf.GetName()), metric.GetHistogram().GetSampleSum(), commonLabels)
+					ts, err := prometheusTS(timeStamp, fmt.Sprintf("%s_sum", mf.GetName()), metric.GetHistogram().GetSampleSum(), commonLabels)
 					if err != nil {
-						return req, fmt.Errorf("buildPrometheusTS err: %w", err)
+						return req, fmt.Errorf("prometheusTS err: %w", err)
 					}
 					req.Timeseries = append(req.Timeseries, ts)
 				}
 
 				// add histogram count
 				{
-					ts, err := buildPrometheusTS(timeStamp, fmt.Sprintf("%s_count", mf.GetName()), float64(metric.GetHistogram().GetSampleCount()), commonLabels)
+					ts, err := prometheusTS(timeStamp, fmt.Sprintf("%s_count", mf.GetName()), float64(metric.GetHistogram().GetSampleCount()), commonLabels)
 					if err != nil {
-						return req, fmt.Errorf("buildPrometheusTS err: %w", err)
+						return req, fmt.Errorf("prometheusTS err: %w", err)
 					}
 					req.Timeseries = append(req.Timeseries, ts)
 				}
@@ -180,36 +211,8 @@ func BuildWriteRequest(g prometheus.Gatherer, timeStamp int64) (prompb.WriteRequ
 	return req, nil
 }
 
-//WriteFunc takes a client and a logger and return a function without parameters ideal to be call in a cronjob
-// every x times.
-func WriteFunc(client remote.WriteClient, logger log.Logger) func() {
-	return func() {
-		timestamp := time.Now().UnixNano() / int64(time.Millisecond)
-
-		req, err := BuildWriteRequest(prometheus.DefaultGatherer, timestamp)
-		if err != nil {
-			level.Error(logger).Log("msg", fmt.Sprintf("error while building remote write request: %s", err))
-			return
-		}
-
-		data, err := proto.Marshal(&req)
-		if err != nil {
-			level.Error(logger).Log("msg", fmt.Sprintf("error while marshalling write request: %s", err))
-			return
-		}
-
-		compressed := snappy.Encode(nil, data)
-
-		// Store adds headers like the contentType, encoding.
-		err = client.Store(context.Background(), compressed)
-		if err != nil {
-			level.Error(logger).Log("msg", fmt.Sprintf("error while storing Time series: %s", err))
-		}
-	}
-}
-
-// buildPrometheusTS builds a prometheus time series (as needed for a remote write request) from the parameters received.
-func buildPrometheusTS(timeStamp int64, metricName string, value float64, labels []prompb.Label) (prompb.TimeSeries, error) {
+// prometheusTS builds a prometheus time series (as needed for a remote write request) from the parameters received.
+func prometheusTS(timeStamp int64, metricName string, value float64, labels []prompb.Label) (prompb.TimeSeries, error) {
 	ts := prompb.TimeSeries{
 		Samples: []prompb.Sample{{Value: value, Timestamp: timeStamp}},
 		Labels:  labels,
@@ -223,14 +226,21 @@ func buildPrometheusTS(timeStamp int64, metricName string, value float64, labels
 }
 
 // prometheusTSLabels converts the labels from a metric family for one that can be use in the remote request.
-func prometheusTSLabels(instance string, m *dto.Metric) []prompb.Label {
+func prometheusTSLabels(m *dto.Metric, extra []prompb.Label) []prompb.Label {
 	var labels []prompb.Label
-	for _, pair := range m.GetLabel() {
-		var label prompb.Label
-		label.Name = pair.GetName()
-		label.Value = pair.GetValue()
-		labels = append(labels, label)
+
+	for _, mLabel := range m.GetLabel() {
+		var l prompb.Label
+		l.Name = mLabel.GetName()
+		l.Value = mLabel.GetValue()
+		labels = append(labels, l)
 	}
-	labels = append(labels, prompb.Label{Name: "instance", Value: instance})
+
+	for _, e := range extra {
+		var l prompb.Label
+		l.Name = e.GetName()
+		l.Value = e.GetValue()
+		labels = append(labels, l)
+	}
 	return labels
 }

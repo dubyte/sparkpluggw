@@ -6,6 +6,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/prometheus/prometheus/prompb"
+
 	"github.com/IHI-Energy-Storage/sparkpluggw/remotewrite"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -61,11 +63,16 @@ func main() {
 	http.Handle(*metricsPath, promhttp.Handler())
 	level.Info(logger).Log("msg", fmt.Sprintf("Listening on %s", *listenAddress))
 
-	c, err := remotewrite.Client("http://192.168.1.230:9090/api/v1/write", 30*time.Second, "sparkplug exporter", true)
-	write := remotewrite.WriteFunc(c, logger)
+	c, err := remotewrite.Client("http://localhost:9090/api/v1/write", 30*time.Second, "sparkplug exporter", true)
+	w := remotewrite.Writer{Client: c, Logger: logger, Gatherer: prometheus.DefaultGatherer,
+		ExtraLabels: []prompb.Label{
+			{Name: "instance", Value: "localhost:9337"},
+			{Name: "app", Value: "sparkpluggw"},
+		},
+	}
 	go func() {
 		for {
-			write()
+			w.Write()
 			<-time.Tick(5 * time.Second)
 		}
 
