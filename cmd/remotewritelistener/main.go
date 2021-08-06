@@ -12,7 +12,6 @@ import (
 )
 
 func handler(w http.ResponseWriter, r *http.Request) {
-	fmt.Printf("\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
 	compressed, err := io.ReadAll(r.Body)
 	if err != nil {
 		log.Printf("error while reading body request: %s", err)
@@ -30,18 +29,22 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		log.Printf("error while unmarshalling remote request: %s", err)
 	}
 	for _, ts := range req.Timeseries {
-		fmt.Printf("\n#############################################\n")
-		fmt.Printf("Labels: ")
+		//fmt.Printf("Labels: ")
 		for _, l := range ts.GetLabels() {
-			fmt.Printf(" %s:%s ", l.GetName(), l.GetValue())
+			if l.GetName() == "__name__" {
+				fmt.Printf(" %s ", l.GetValue())
+			} else {
+				fmt.Printf(" %s:%s ", l.GetName(), l.GetValue())
+			}
 		}
-		fmt.Printf("\nSamples: ")
+		//fmt.Printf("\nSamples: ")
 		for _, s := range ts.GetSamples() {
-			fmt.Printf("timestamp:%d value:%f ", s.T(), s.V())
+			//fmt.Printf("timestamp:%d value:%f ", s.T(), s.V())
+			fmt.Printf("%.02f", s.V())
 		}
 		fmt.Println()
 	}
-
+	fmt.Println("--")
 	w.WriteHeader(http.StatusBadRequest)
 }
 

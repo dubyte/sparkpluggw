@@ -218,16 +218,6 @@ func (e *spplugExporter) receiveMessage() func(mqtt.Client, mqtt.Message) {
 			metricLabelValues := cloneLabelSet(siteLabelValues)
 
 			newLabelname, metricName, err := getMetricName(metric)
-
-			if newLabelname != nil {
-				for list := 0; list < len(newLabelname); list++ {
-					parts := strings.Split(newLabelname[list], ":")
-
-					metricLabels = append(metricLabels, parts[0])
-					metricLabelValues[parts[0]] = string(parts[1])
-				}
-			}
-
 			if err != nil {
 				if metricName != "Device Control/Rebirth" {
 					level.Error(logger).Log("msg", fmt.Sprintf("Error: %s %s %v", siteLabelValues["sp_edge_node_id"], metricName, err))
@@ -235,6 +225,16 @@ func (e *spplugExporter) receiveMessage() func(mqtt.Client, mqtt.Message) {
 				}
 
 				continue
+			}
+
+			// TODO: check why this code fails with ("Device Control/Scan Rate ms") And why the err check was after this block
+			if newLabelname != nil {
+				for list := 0; list < len(newLabelname); list++ {
+					parts := strings.Split(newLabelname[list], ":")
+
+					metricLabels = append(metricLabels, parts[0])
+					metricLabelValues[parts[0]] = string(parts[1])
+				}
 			}
 
 			// if metricName is not within the e.metrics OR
@@ -344,7 +344,7 @@ func (e *spplugExporter) reincarnate(namespace string, group string,
 
 		topic := namespace + "/" + group + "/NCMD/" + nodeID
 
-		for true {
+		for {
 			if e.client.IsConnectionOpen() {
 				level.Info(logger).Log("msg", fmt.Sprintf("Reincarnate: %s\n", topic))
 
