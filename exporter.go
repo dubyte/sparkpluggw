@@ -9,6 +9,8 @@ import (
 	"time"
 
 	pb "github.com/IHI-Energy-Storage/sparkpluggw/Sparkplug"
+	"github.com/IHI-Energy-Storage/sparkpluggw/router"
+	"github.com/afiskon/promtail-client/promtail"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/go-kit/log/level"
 	"github.com/golang/protobuf/proto"
@@ -72,10 +74,12 @@ type spplugExporter struct {
 	// Holds the mertrics collected
 	metrics        map[string][]prometheusmetric
 	counterMetrics map[string]*prometheus.CounterVec
+	messageRouter  router.DecisionTree
+	lokiClient     promtail.Client
 }
 
 // Initialize
-func initSparkPlugExporter(e **spplugExporter) {
+func initSparkPlugExporter(e **spplugExporter, lokiClient promtail.Client) {
 
 	if *mqttDebug == "true" {
 		mqtt.ERROR = oslog.New(os.Stdout, "MQTT ERROR    ", oslog.Ltime)
@@ -114,11 +118,14 @@ func initSparkPlugExporter(e **spplugExporter) {
 		connectDesc: prometheus.NewDesc(
 			prometheus.BuildFQName(progname, "mqtt", "connected"),
 			"Is the exporter connected to mqtt broker", nil, nil),
+		lokiClient: lokiClient,
 	}
 
 	(*e).client = mqtt.NewClient(options)
 
 	level.Debug(logger).Log("msg", fmt.Sprint("Initializing Exporter Metrics and Data"))
+
+	(*e).messageRouter = router.New()
 
 	(*e).initializeMetricsAndData()
 
@@ -127,7 +134,7 @@ func initSparkPlugExporter(e **spplugExporter) {
 		os.Exit(1)
 	}
 
-	(*e).client.Subscribe(*topic, 2, (*e).receiveMessage())
+	//(*e).client.Subscribe(*topic, 2, (*e).receiveMessage) // is it needed?
 }
 
 func (e *spplugExporter) Describe(ch chan<- *prometheus.Desc) {
@@ -178,130 +185,171 @@ func (e *spplugExporter) Collect(ch chan<- prometheus.Metric) {
 	}
 }
 
-func (e *spplugExporter) receiveMessage() func(mqtt.Client, mqtt.Message) {
-	return func(c mqtt.Client, m mqtt.Message) {
-		mutex.Lock()
-		defer mutex.Unlock()
+func (e *spplugExporter) receiveMessage(client mqtt.Client, m mqtt.Message) {
+	var payload pb.Payload
 
-		var pbMsg pb.Payload
-		var eventString string
+	// Unmarshal MQTT message into Google Protocol Buffer
+	if err := proto.Unmarshal(m.Payload(), &payload); err != nil {
+		level.Error(logger).Log("msg", fmt.Sprintf("Error decoding GPB, message: %v", err))
+		return
+	}
+	topic := m.Topic()
+	level.Debug(logger).Log("msg", fmt.Sprintf("Received message: %s", topic))
+	level.Debug(logger).Log("msg", fmt.Sprintf("%s", payload.String()))
 
-		// Unmarshal MQTT message into Google Protocol Buffer
-		if err := proto.Unmarshal(m.Payload(), &pbMsg); err != nil {
-			level.Error(logger).Log("msg", fmt.Sprintf("Error decoding GPB, message: %v", err))
-			return
-		}
+	msgIs, err := e.messageRouter.Resolve(payload, topic)
+	if err != nil {
+		level.Error(logger).Log("msg", fmt.Sprintf("messageRouter error: %v", err))
+		return
+	}
 
-		topic := m.Topic()
-		level.Debug(logger).Log("msg", fmt.Sprintf("Received message: %s", topic))
-		level.Debug(logger).Log("msg", fmt.Sprintf("%s", pbMsg.String()))
+	if msgIs == "metric" {
+		e.handleMetric(client, payload, topic)
+	} else {
+		e.handleEvent(payload, topic)
+	}
+}
 
-		// Get the labels and value for the labels from the topic and constants
-		siteLabels, siteLabelValues, processMetric := prepareLabelsAndValues(topic)
+func (e *spplugExporter) handleMetric(c mqtt.Client, pbMsg pb.Payload, topic string) {
+	mutex.Lock()
+	defer mutex.Unlock()
 
-		if !processMetric {
-			return
-		}
+	var eventString string
 
-		// Process this edge node, if it is unique start the re-birth process
-		e.evaluateEdgeNode(c, siteLabelValues["sp_namespace"],
-			siteLabelValues["sp_group_id"],
-			siteLabelValues["sp_edge_node_id"])
+	// Get the labels and value for the labels from the topic and constants
+	siteLabels, siteLabelValues, processMetric := prepareLabelsAndValues(topic)
 
-		metricList := pbMsg.GetMetrics()
-		level.Debug(logger).Log("msg", fmt.Sprintf("Received message in processMetric: %s", metricList))
+	if !processMetric {
+		return
+	}
 
-		for _, metric := range metricList {
+	// Process this edge node, if it is unique start the re-birth process
+	e.evaluateEdgeNode(c, siteLabelValues["sp_namespace"],
+		siteLabelValues["sp_group_id"],
+		siteLabelValues["sp_edge_node_id"])
 
-			var newMetric prometheusmetric
-			metricLabels := siteLabels
-			metricLabelValues := cloneLabelSet(siteLabelValues)
+	metricList := pbMsg.GetMetrics()
+	level.Debug(logger).Log("msg", fmt.Sprintf("Received message in processMetric: %s", metricList))
 
-			newLabelname, metricName, err := getMetricName(metric)
-			if err != nil {
-				if metricName != "Device Control/Rebirth" {
-					level.Error(logger).Log("msg", fmt.Sprintf("Error: %s %s %v", siteLabelValues["sp_edge_node_id"], metricName, err))
-					e.counterMetrics[SPPushInvalidMetric].With(siteLabelValues).Inc()
-				}
+	for _, metric := range metricList {
 
-				continue
+		var newMetric prometheusmetric
+		metricLabels := siteLabels
+		metricLabelValues := cloneLabelSet(siteLabelValues)
+
+		newLabelname, metricName, err := getMetricName(metric)
+		if err != nil {
+			if metricName != "Device Control/Rebirth" {
+				level.Error(logger).Log("msg", fmt.Sprintf("Error: %s %s %v", siteLabelValues["sp_edge_node_id"], metricName, err))
+				e.counterMetrics[SPPushInvalidMetric].With(siteLabelValues).Inc()
 			}
 
-			// TODO: check why this code fails with ("Device Control/Scan Rate ms") And why the err check was after this block
-			if newLabelname != nil {
-				for list := 0; list < len(newLabelname); list++ {
-					parts := strings.Split(newLabelname[list], ":")
+			continue
+		}
 
-					metricLabels = append(metricLabels, parts[0])
-					metricLabelValues[parts[0]] = string(parts[1])
-				}
+		// TODO: check why this code fails with ("Device Control/Scan Rate ms") And why the err check was after this block
+		if newLabelname != nil {
+			for list := 0; list < len(newLabelname); list++ {
+				parts := strings.Split(newLabelname[list], ":")
+
+				metricLabels = append(metricLabels, parts[0])
+				metricLabelValues[parts[0]] = string(parts[1])
 			}
+		}
 
-			// if metricName is not within the e.metrics OR
-			// if metricLabels (note you will need a function to compare maps) is not within e.metrics[metricName], then you need to create a new metric
-			_, metricNameExists := e.metrics[metricName]
-			var labelIndex int
-			var labelSetExists bool
+		// if metricName is not within the e.metrics OR
+		// if metricLabels (note you will need a function to compare maps) is not within e.metrics[metricName], then you need to create a new metric
+		_, metricNameExists := e.metrics[metricName]
+		var labelIndex int
+		var labelSetExists bool
 
-			// If the metric name exists in the map, that means that we
-			// have seen this metric before.   However due to the customized
-			// label support, it's possible that we can use an existing metric
-			// or need to create a new one.
+		// If the metric name exists in the map, that means that we
+		// have seen this metric before.   However due to the customized
+		// label support, it's possible that we can use an existing metric
+		// or need to create a new one.
 
-			if metricNameExists {
-				// Each entry under a metricName contains a set of label names
-				// and a pointer to the metric.   This is what makes a time
-				// series unique, so if the label names we received are not
-				// contained in the list, we need to create a new entry
+		if metricNameExists {
+			// Each entry under a metricName contains a set of label names
+			// and a pointer to the metric.   This is what makes a time
+			// series unique, so if the label names we received are not
+			// contained in the list, we need to create a new entry
 
-				labelSetExists, labelIndex = compareLabelSet(e.metrics[metricName],
-					metricLabels)
+			labelSetExists, labelIndex = compareLabelSet(e.metrics[metricName],
+				metricLabels)
 
-				// If the labels are not there, we create a new metric.
-				// If they are we update an existing metric
-				if !labelSetExists {
+			// If the labels are not there, we create a new metric.
+			// If they are we update an existing metric
+			if !labelSetExists {
 
-					eventString = "Creating new timeseries for existing metric"
-					newMetric.promlabel = append(newMetric.promlabel,
-						metricLabels...)
-
-					newMetric.prommetric = createNewMetric(metricName,
-						metricLabels)
-
-					labelIndex = len(e.metrics[metricName])
-
-					e.metrics[metricName] = append(e.metrics[metricName],
-						newMetric)
-				} else {
-					eventString = "Updating metric"
-					e.metrics[metricName][labelIndex].promlabel = metricLabels
-				}
-			} else {
-				eventString = "Creating metric"
+				eventString = "Creating new timeseries for existing metric"
 				newMetric.promlabel = append(newMetric.promlabel,
 					metricLabels...)
+
 				newMetric.prommetric = createNewMetric(metricName,
 					metricLabels)
-				labelIndex = 0
+
+				labelIndex = len(e.metrics[metricName])
+
 				e.metrics[metricName] = append(e.metrics[metricName],
 					newMetric)
-			}
-			if metricVal, err := convertMetricToFloat(metric); err != nil {
-				level.Debug(logger).Log("msg", fmt.Sprintf("Error %v converting data type for metric %s",
-					err, metricName))
 			} else {
-				level.Info(logger).Log("msg", fmt.Sprintf("%s: name (%s) value (%g) labels: (%s)",
-					eventString, metricName, metricVal, metricLabelValues))
-
-				level.Debug(logger).Log("msg", fmt.Sprintf("metriclabels: (%s) siteLabelValues: (%s)",
-					metricLabels, siteLabelValues))
-
-				e.metrics[metricName][labelIndex].prommetric.With(metricLabelValues).Set(metricVal)
-				e.metrics[SPLastTimePushedMetric][0].prommetric.With(siteLabelValues).SetToCurrentTime()
-				e.counterMetrics[SPPushTotalMetric].With(siteLabelValues).Inc()
+				eventString = "Updating metric"
+				e.metrics[metricName][labelIndex].promlabel = metricLabels
 			}
+		} else {
+			eventString = "Creating metric"
+			newMetric.promlabel = append(newMetric.promlabel,
+				metricLabels...)
+			newMetric.prommetric = createNewMetric(metricName,
+				metricLabels)
+			labelIndex = 0
+			e.metrics[metricName] = append(e.metrics[metricName],
+				newMetric)
+		}
+		if metricVal, err := convertMetricToFloat(metric); err != nil {
+			level.Debug(logger).Log("msg", fmt.Sprintf("Error %v converting data type for metric %s",
+				err, metricName))
+		} else {
+			level.Info(logger).Log("msg", fmt.Sprintf("%s: name (%s) value (%g) labels: (%s)",
+				eventString, metricName, metricVal, metricLabelValues))
+
+			level.Debug(logger).Log("msg", fmt.Sprintf("metriclabels: (%s) siteLabelValues: (%s)",
+				metricLabels, siteLabelValues))
+
+			e.metrics[metricName][labelIndex].prommetric.With(metricLabelValues).Set(metricVal)
+			e.metrics[SPLastTimePushedMetric][0].prommetric.With(siteLabelValues).SetToCurrentTime()
+			e.counterMetrics[SPPushTotalMetric].With(siteLabelValues).Inc()
 		}
 	}
+}
+
+func (e *spplugExporter) handleEvent(pbMsg pb.Payload, topic string) {
+	if len(pbMsg.GetMetrics()) == 0 {
+		level.Info(logger).Log("msg", "skipping event without content")
+		return
+	}
+
+	valueType := pbMsg.GetMetrics()[0].GetDatatype()
+	var value interface{}
+	switch dataTypeName[valueType] {
+	case "Int8", "Int16", "Int32", "Int64", "UInt8", "UInt16", "UInt32", "UInt64":
+		value = pbMsg.GetMetrics()[0].GetIntValue()
+	case "Float":
+		value = pbMsg.GetMetrics()[0].GetFloatValue()
+	case "Double":
+		value = pbMsg.GetMetrics()[0].GetDoubleValue()
+	case "Boolean":
+		value = pbMsg.GetMetrics()[0].GetBooleanValue()
+	case "String":
+		value = pbMsg.GetMetrics()[0].GetStringValue()
+	default:
+		level.Warn(logger).Log("msg", fmt.Sprintf("event type not supported: %s", dataTypeName[valueType]))
+	}
+
+	eventValue := fmt.Sprintf("%v", value)
+
+	e.lokiClient.Infof("source = %s time = %s topic = %s event_name = %s event_value = %s",
+		sourceName, time.Now().String(), topic, pbMsg.GetMetrics()[0].GetName(), eventValue)
 }
 
 // If the edge node is unique (this is the first time seeing it), then
@@ -473,3 +521,80 @@ func (e *spplugExporter) initializeMetricsAndData() {
 		edgeNodeLabels,
 	)
 }
+
+var (
+	dataTypeName = map[uint32]string{
+		0:  "Unknown",
+		1:  "Int8",
+		2:  "Int16",
+		3:  "Int32",
+		4:  "Int64",
+		5:  "UInt8",
+		6:  "UInt16",
+		7:  "UInt32",
+		8:  "UInt64",
+		9:  "Float",
+		10: "Double",
+		11: "Boolean",
+		12: "String",
+		13: "DateTime",
+		14: "Text",
+		15: "UUID",
+		16: "DataSet",
+		17: "Bytes",
+		18: "File",
+		19: "Template",
+		20: "PropertySet",
+		21: "PropertySetList",
+		22: "Int8Array",
+		23: "Int16Array",
+		24: "Int32Array",
+		25: "Int64Array",
+		26: "UInt8Array",
+		27: "UInt16Array",
+		28: "UInt32Array",
+		29: "UInt64Array",
+		30: "FloatArray",
+		31: "DoubleArray",
+		32: "BooleanArray",
+		33: "StringArray",
+		34: "DateTimeArray",
+	}
+	dataTypeValue = map[string]uint32{
+		"Unknown":         0,
+		"Int8":            1,
+		"Int16":           2,
+		"Int32":           3,
+		"Int64":           4,
+		"UInt8":           5,
+		"UInt16":          6,
+		"UInt32":          7,
+		"UInt64":          8,
+		"Float":           9,
+		"Double":          10,
+		"Boolean":         11,
+		"String":          12,
+		"DateTime":        13,
+		"Text":            14,
+		"UUID":            15,
+		"DataSet":         16,
+		"Bytes":           17,
+		"File":            18,
+		"Template":        19,
+		"PropertySet":     20,
+		"PropertySetList": 21,
+		"Int8Array":       22,
+		"Int16Array":      23,
+		"Int32Array":      24,
+		"Int64Array":      25,
+		"UInt8Array":      26,
+		"UInt16Array":     27,
+		"UInt32Array":     28,
+		"UInt64Array":     29,
+		"FloatArray":      30,
+		"DoubleArray":     31,
+		"BooleanArray":    32,
+		"StringArray":     33,
+		"DateTimeArray":   34,
+	}
+)

@@ -7,16 +7,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus/promhttp"
-
-	"github.com/prometheus/prometheus/prompb"
-
 	"github.com/IHI-Energy-Storage/sparkpluggw/remotewrite"
+	"github.com/afiskon/promtail-client/promtail"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/common/promlog"
 	"github.com/prometheus/common/promlog/flag"
+	"github.com/prometheus/prometheus/prompb"
 	"gopkg.in/alecthomas/kingpin.v2"
 )
 
@@ -85,12 +84,32 @@ var (
 	logger   log.Logger
 )
 
+const (
+	sourceName = "eonsim"
+)
+
 func main() {
 	var promlogConfig promlog.Config
 	flag.AddFlags(kingpin.CommandLine, &promlogConfig)
 	kingpin.Parse()
 	logger = promlog.NewDynamic(&promlogConfig)
-	initSparkPlugExporter(&exporter)
+
+	conf := promtail.ClientConfig{
+		PushURL:            "http://localhost:3100/loki/api/v1/push",
+		Labels:             fmt.Sprintf(`{source="%s",job="%s"}`, sourceName, progname),
+		BatchWait:          5 * time.Second,
+		BatchEntriesNumber: 10000,
+		SendLevel:          promtail.INFO,
+		PrintLevel:         promtail.ERROR,
+	}
+
+	lokiClient, err := promtail.NewClientProto(conf)
+	if err != nil {
+		level.Error(logger).Log("msg", err)
+		os.Exit(1)
+	}
+	defer lokiClient.Shutdown()
+	initSparkPlugExporter(&exporter, lokiClient)
 	prometheus.MustRegister(exporter)
 	webInterfaceEnabled := !*disableWebInterface
 
