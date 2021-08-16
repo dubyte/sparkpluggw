@@ -49,7 +49,7 @@ var (
 	// TODO: be more specific and include the version
 	remoteWriteUserAgent = kingpin.Flag("remote-write.user-agent",
 		"the user agent that will be be used to identify the exporter in prometheus").
-		Default("sparkplug exporter").String()
+		Default("sparkpluggw exporter").String()
 
 	// TODO: pass extra labels to be used for remotewrite.
 
@@ -79,13 +79,26 @@ var (
 
 	mqttDebug = kingpin.Flag("mqtt.debug", "Enable MQTT debugging").
 			Default("false").String()
+
+	pushURL = kingpin.Flag("loki.push-URL",
+		"the url of the loki push endpoint to send the logs").
+		Default("http://localhost:3100/loki/api/v1/push").String()
+
+	lokiLabels = kingpin.Flag("loki.labels",
+		"Labels to send to loki").
+		Default(`{source="mqtt.sparkplugb",job="sparkpluggw"}`).String()
+
+	lokiBatchWait = kingpin.Flag("loki.batch-wait",
+		"Maximum amount of time to wait before sending a batch, even if that batch isn't full.").
+		Default("5s").Duration()
+
 	progname = "sparkpluggw"
 	exporter *spplugExporter
 	logger   log.Logger
 )
 
 const (
-	sourceName = "eonsim"
+	sourceName = "Simulation"
 )
 
 func main() {
@@ -95,9 +108,9 @@ func main() {
 	logger = promlog.NewDynamic(&promlogConfig)
 
 	conf := promtail.ClientConfig{
-		PushURL:            "http://localhost:3100/loki/api/v1/push",
-		Labels:             fmt.Sprintf(`{source="%s",job="%s"}`, sourceName, progname),
-		BatchWait:          5 * time.Second,
+		PushURL:            *pushURL,
+		Labels:             *lokiLabels,
+		BatchWait:          *lokiBatchWait,
 		BatchEntriesNumber: 10000,
 		SendLevel:          promtail.INFO,
 		PrintLevel:         promtail.ERROR,
