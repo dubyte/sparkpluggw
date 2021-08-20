@@ -13,14 +13,15 @@ import (
 	"github.com/afiskon/promtail-client/promtail"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/go-kit/log/level"
-	"github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/proto" //nolint
 	"github.com/prometheus/client_golang/prometheus"
 )
 
 var mutex sync.RWMutex
 var edgeNodeList map[string]bool
 
-// contants for various SP labels and metric names
+// constants for various SP labels and metric names
+//nolint
 const (
 	SPPushTotalMetric      string = "sp_total_metrics_pushed"
 	SPLastTimePushedMetric string = "sp_last_pushed_timestamp"
@@ -134,7 +135,8 @@ func initSparkPlugExporter(e **spplugExporter, lokiClient promtail.Client) {
 		os.Exit(1)
 	}
 
-	//(*e).client.Subscribe(*topic, 2, (*e).receiveMessage) // is it needed?
+	// TODO: is it needed?
+	//(*e).client.Subscribe(*topic, 2, (*e).receiveMessage)
 }
 
 func (e *spplugExporter) Describe(ch chan<- *prometheus.Desc) {
@@ -323,6 +325,10 @@ func (e *spplugExporter) handleMetric(c mqtt.Client, pbMsg pb.Payload, topic str
 	}
 }
 
+const (
+	positionEdgeNodeID = 4
+)
+
 func (e *spplugExporter) handleEvent(pbMsg pb.Payload, topic string) {
 	if len(pbMsg.GetMetrics()) == 0 {
 		level.Info(logger).Log("msg", "skipping event without content")
@@ -347,9 +353,16 @@ func (e *spplugExporter) handleEvent(pbMsg pb.Payload, topic string) {
 	}
 
 	eventValue := fmt.Sprintf("%v", value)
+	topicParts := strings.Split(topic, "/")
 
-	e.lokiClient.Infof("source = %s time = %s topic = %s event_name = %s event_value = %s",
-		sourceName, time.Now().String(), topic, pbMsg.GetMetrics()[0].GetName(), eventValue)
+	var edgeNodeId string
+	if len(topicParts) > positionEdgeNodeID {
+		edgeNodeId = topicParts[positionEdgeNodeID]
+	}
+
+	//bus id too, event_type
+	e.lokiClient.Infof("source = %s time = %s topic = %s event_name = %s event_value = %s event_type = %s, edge_node = %s",
+		*lokiSourceName, time.Now().String(), topic, pbMsg.GetMetrics()[0].GetName(), eventValue, dataTypeName[valueType], edgeNodeId)
 }
 
 // If the edge node is unique (this is the first time seeing it), then
@@ -435,7 +448,7 @@ func (e *spplugExporter) initializeMetricsAndData() {
 	e.counterMetrics[SPPushTotalMetric] = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: SPPushTotalMetric,
-			Help: fmt.Sprintf("Number of messages published on a MQTT topic"),
+			Help: "Number of messages published on a MQTT topic",
 		},
 		siteLabels,
 	)
@@ -445,7 +458,7 @@ func (e *spplugExporter) initializeMetricsAndData() {
 	test.prommetric = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: SPLastTimePushedMetric,
-			Help: fmt.Sprintf("Last time a metric was pushed to a MQTT topic"),
+			Help: "Last time a metric was pushed to a MQTT topic",
 		},
 		siteLabels,
 	)
@@ -456,7 +469,7 @@ func (e *spplugExporter) initializeMetricsAndData() {
 	e.counterMetrics[SPPushInvalidMetric] = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: SPPushInvalidMetric,
-			Help: fmt.Sprintf("Total non-compliant metric names received"),
+			Help: "Total non-compliant metric names received",
 		},
 		siteLabels,
 	)
@@ -466,7 +479,7 @@ func (e *spplugExporter) initializeMetricsAndData() {
 	e.counterMetrics[SPConnectionCount] = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: SPConnectionCount,
-			Help: fmt.Sprintf("Total MQTT connections established"),
+			Help: "Total MQTT connections established",
 		},
 		serviceLabels,
 	)
@@ -476,7 +489,7 @@ func (e *spplugExporter) initializeMetricsAndData() {
 	e.counterMetrics[SPDisconnectionCount] = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: SPDisconnectionCount,
-			Help: fmt.Sprintf("Total MQTT disconnections"),
+			Help: "Total MQTT disconnections",
 		},
 		serviceLabels,
 	)
@@ -486,7 +499,7 @@ func (e *spplugExporter) initializeMetricsAndData() {
 	e.counterMetrics[SPReincarnationAttempts] = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: SPReincarnationAttempts,
-			Help: fmt.Sprintf("Total NCMD message attempts"),
+			Help: "Total NCMD message attempts",
 		},
 		edgeNodeLabels,
 	)
@@ -496,7 +509,7 @@ func (e *spplugExporter) initializeMetricsAndData() {
 	e.counterMetrics[SPReincarnationFailures] = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: SPReincarnationFailures,
-			Help: fmt.Sprintf("Total NCMD message failures"),
+			Help: "Total NCMD message failures",
 		},
 		edgeNodeLabels,
 	)
@@ -506,7 +519,7 @@ func (e *spplugExporter) initializeMetricsAndData() {
 	e.counterMetrics[SPReincarnationSuccess] = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: SPReincarnationSuccess,
-			Help: fmt.Sprintf("Total successful NCMD attempts"),
+			Help: "Total successful NCMD attempts",
 		},
 		edgeNodeLabels,
 	)
@@ -516,7 +529,7 @@ func (e *spplugExporter) initializeMetricsAndData() {
 	e.counterMetrics[SPReincarnationDelay] = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: SPReincarnationDelay,
-			Help: fmt.Sprintf("Total delayed NCMD attempts due to connection issues"),
+			Help: "Total delayed NCMD attempts due to connection issues",
 		},
 		edgeNodeLabels,
 	)
@@ -559,42 +572,5 @@ var (
 		32: "BooleanArray",
 		33: "StringArray",
 		34: "DateTimeArray",
-	}
-	dataTypeValue = map[string]uint32{
-		"Unknown":         0,
-		"Int8":            1,
-		"Int16":           2,
-		"Int32":           3,
-		"Int64":           4,
-		"UInt8":           5,
-		"UInt16":          6,
-		"UInt32":          7,
-		"UInt64":          8,
-		"Float":           9,
-		"Double":          10,
-		"Boolean":         11,
-		"String":          12,
-		"DateTime":        13,
-		"Text":            14,
-		"UUID":            15,
-		"DataSet":         16,
-		"Bytes":           17,
-		"File":            18,
-		"Template":        19,
-		"PropertySet":     20,
-		"PropertySetList": 21,
-		"Int8Array":       22,
-		"Int16Array":      23,
-		"Int32Array":      24,
-		"Int64Array":      25,
-		"UInt8Array":      26,
-		"UInt16Array":     27,
-		"UInt32Array":     28,
-		"UInt64Array":     29,
-		"FloatArray":      30,
-		"DoubleArray":     31,
-		"BooleanArray":    32,
-		"StringArray":     33,
-		"DateTimeArray":   34,
 	}
 )

@@ -51,7 +51,9 @@ var (
 		"the user agent that will be be used to identify the exporter in prometheus").
 		Default("sparkpluggw exporter").String()
 
-	// TODO: pass extra labels to be used for remotewrite.
+	// to pass extra labels --remote-write.extra-label=app=test --remote-write.extra-label=env=development
+	remoteWriteExtraLabels = kingpin.Flag("remote-write.extra-label", "extra label to add").
+				StringMap()
 
 	remoteWriteTimeout = kingpin.Flag("remote-write.timeout",
 		"Sets the timeout when sending request to prometheus remote write").
@@ -80,13 +82,19 @@ var (
 	mqttDebug = kingpin.Flag("mqtt.debug", "Enable MQTT debugging").
 			Default("false").String()
 
+	//lokiPushEnabled = kingpin.Flag("loki.enabled", "Enable push events to loki").
+	//		Bool()
+
+	lokiSourceName = kingpin.Flag("loki.source", "source to be used as label for events").
+			Default("sparkpluggw").String()
+
 	pushURL = kingpin.Flag("loki.push-URL",
 		"the url of the loki push endpoint to send the logs").
 		Default("http://localhost:3100/loki/api/v1/push").String()
 
-	lokiLabels = kingpin.Flag("loki.labels",
-		"Labels to send to loki").
-		Default(`{source="mqtt.sparkplugb",job="sparkpluggw"}`).String()
+	// it allows to add pass labels like: --loki.labels=env=production --loki.labels=app=sparkplug
+	lokiLabels = kingpin.Flag("loki.label", "Label to send to loki").
+			StringMap()
 
 	lokiBatchWait = kingpin.Flag("loki.batch-wait",
 		"Maximum amount of time to wait before sending a batch, even if that batch isn't full.").
@@ -97,34 +105,30 @@ var (
 	logger   log.Logger
 )
 
-const (
-	sourceName = "Simulation"
-)
-
 func main() {
 	var promlogConfig promlog.Config
 	flag.AddFlags(kingpin.CommandLine, &promlogConfig)
 	kingpin.Parse()
-	logger = promlog.NewDynamic(&promlogConfig)
+
+	logger = promlog.New(&promlogConfig)
 
 	conf := promtail.ClientConfig{
 		PushURL:            *pushURL,
-		Labels:             *lokiLabels,
+		Labels:             buildLokiLabels(*lokiLabels),
 		BatchWait:          *lokiBatchWait,
 		BatchEntriesNumber: 10000,
 		SendLevel:          promtail.INFO,
 		PrintLevel:         promtail.ERROR,
 	}
-
 	lokiClient, err := promtail.NewClientProto(conf)
 	if err != nil {
 		level.Error(logger).Log("msg", err)
 		os.Exit(1)
 	}
 	defer lokiClient.Shutdown()
+
 	initSparkPlugExporter(&exporter, lokiClient)
 	prometheus.MustRegister(exporter)
-	webInterfaceEnabled := !*disableWebInterface
 
 	var wg sync.WaitGroup
 
@@ -135,11 +139,16 @@ func main() {
 			level.Error(logger).Log("msg", err)
 			os.Exit(1)
 		}
+
+		var promLabels []prompb.Label
+
+		for k, v := range *remoteWriteExtraLabels {
+			label := prompb.Label{Name: k, Value: v}
+			promLabels = append(promLabels, label)
+		}
+
 		w := remotewrite.Writer{Client: c, Logger: logger, Gatherer: prometheus.DefaultGatherer,
-			ExtraLabels: []prompb.Label{
-				//{Name: "instance", Value: "localhost:9337"},
-				{Name: "app", Value: "sparkpluggw"},
-			},
+			ExtraLabels: promLabels,
 		}
 
 		wg.Add(1)
@@ -151,6 +160,8 @@ func main() {
 			}
 		}(&wg)
 	}
+
+	webInterfaceEnabled := !*disableWebInterface
 
 	if webInterfaceEnabled {
 		http.Handle(*metricsPath, promhttp.Handler())

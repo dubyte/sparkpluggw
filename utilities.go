@@ -8,7 +8,7 @@ import (
 	pb "github.com/IHI-Energy-Storage/sparkpluggw/Sparkplug"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/go-kit/log/level"
-	"github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/proto" //nolint
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 )
@@ -189,7 +189,7 @@ func getMetricName(metric *pb.Payload_Metric) ([]string, string, error) {
 
 	metricName := metric.GetName()
 
-	if strings.Contains(metricName, "/") == true && metricName != "Device Control/Rebirth" {
+	if strings.Contains(metricName, "/") && metricName != "Device Control/Rebirth" {
 		parts := strings.Split(metricName, "/")
 		size := len(parts)
 		metricName = parts[size-1]
@@ -201,7 +201,7 @@ func getMetricName(metric *pb.Payload_Metric) ([]string, string, error) {
 	}
 	metricNameL := model.LabelValue(metricName)
 
-	if model.IsValidMetricName(metricNameL) == true {
+	if model.IsValidMetricName(metricNameL) {
 		errUnexpectedType = nil
 	} else {
 		errUnexpectedType = errors.New("Non-compliant metric name")
@@ -233,7 +233,7 @@ func convertMetricToFloat(metric *pb.Payload_Metric) (float64, error) {
 	case PBUInt32:
 		return float64(metric.GetIntValue()), nil
 	case PBInt64:
-		// This exists because there is an unsigned consersion that
+		// This exists because there is an unsigned conversion that
 		// occurs, so moving it to an int64 allows for the sign to work properly
 		tmpLong := metric.GetLongValue()
 		tmpSigned := int64(tmpLong)
@@ -247,4 +247,19 @@ func convertMetricToFloat(metric *pb.Payload_Metric) (float64, error) {
 	default:
 		return float64(0), errUnexpectedType
 	}
+}
+
+func buildLokiLabels(flagLabels map[string]string) string {
+	labels := "{"
+	var l []string
+	for k, v := range flagLabels {
+		l = append(l, fmt.Sprintf(`%s="%s"`, k, v))
+	}
+	if len(l) == 0 {
+		labels += `env="dev",job="sparkpluggw"`
+	} else {
+		labels += strings.Join(l, ",")
+	}
+	labels += "}"
+	return labels
 }
