@@ -226,9 +226,9 @@ func (e *spplugExporter) handleMetric(c mqtt.Client, pbMsg pb.Payload, topic str
 	}
 
 	// Process this edge node, if it is unique start the re-birth process
-	e.evaluateEdgeNode(c, siteLabelValues["sp_namespace"],
-		siteLabelValues["sp_group_id"],
-		siteLabelValues["sp_edge_node_id"])
+	e.evaluateEdgeNode(c, siteLabelValues[SPNamespace],
+		siteLabelValues[SPGroupID],
+		siteLabelValues[SPEdgeNodeID])
 
 	metricList := pbMsg.GetMetrics()
 	level.Debug(logger).Log("msg", fmt.Sprintf("Received message in processMetric: %s", metricList))
@@ -361,8 +361,9 @@ func (e *spplugExporter) handleEvent(pbMsg pb.Payload, topic string) {
 	}
 
 	//bus id too, event_type
-	e.lokiClient.Infof("source = %s time = %s topic = %s event_name = %s event_value = %s event_type = %s, edge_node = %s",
-		*lokiSourceName, time.Now().String(), topic, pbMsg.GetMetrics()[0].GetName(), eventValue, dataTypeName[valueType], edgeNodeId)
+	//TODO:time should be taken from event.
+	e.lokiClient.Infof("time = %s topic = %s event_name = %s event_value = %s event_type = %s, edge_node = %s",
+		time.Now().String(), topic, pbMsg.GetMetrics()[0].GetName(), eventValue, dataTypeName[valueType], edgeNodeId)
 }
 
 // If the edge node is unique (this is the first time seeing it), then
@@ -534,43 +535,3 @@ func (e *spplugExporter) initializeMetricsAndData() {
 		edgeNodeLabels,
 	)
 }
-
-var (
-	dataTypeName = map[uint32]string{
-		0:  "Unknown",
-		1:  "Int8",
-		2:  "Int16",
-		3:  "Int32",
-		4:  "Int64",
-		5:  "UInt8",
-		6:  "UInt16",
-		7:  "UInt32",
-		8:  "UInt64",
-		9:  "Float",
-		10: "Double",
-		11: "Boolean",
-		12: "String",
-		13: "DateTime",
-		14: "Text",
-		15: "UUID",
-		16: "DataSet",
-		17: "Bytes",
-		18: "File",
-		19: "Template",
-		20: "PropertySet",
-		21: "PropertySetList",
-		22: "Int8Array",
-		23: "Int16Array",
-		24: "Int32Array",
-		25: "Int64Array",
-		26: "UInt8Array",
-		27: "UInt16Array",
-		28: "UInt32Array",
-		29: "UInt64Array",
-		30: "FloatArray",
-		31: "DoubleArray",
-		32: "BooleanArray",
-		33: "StringArray",
-		34: "DateTimeArray",
-	}
-)

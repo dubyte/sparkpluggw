@@ -15,7 +15,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/common/promlog"
 	"github.com/prometheus/common/promlog/flag"
-	"github.com/prometheus/prometheus/prompb"
 	"gopkg.in/alecthomas/kingpin.v2"
 )
 
@@ -38,13 +37,9 @@ var (
 		"if passed exporter will send metrics to a remote prometheus").
 		Bool()
 
-	prometheusAddr = kingpin.Flag("remote-write.addr",
-		"the address of the prometheus server where the exporter will send the metrics").
-		Default("http://localhost:9090").String()
-
-	remoteWritePath = kingpin.Flag("remote-write.path",
+	remoteWriteEndpoint = kingpin.Flag("remote-write.endpoint",
 		"the endpoint where prometheus is listen for remote write requests").
-		Default("/api/v1/write").String()
+		Default("http://localhost:9090/api/v1/write").URL()
 
 	// TODO: be more specific and include the version
 	remoteWriteUserAgent = kingpin.Flag("remote-write.user-agent",
@@ -54,6 +49,9 @@ var (
 	// to pass extra labels --remote-write.extra-label=app=test --remote-write.extra-label=env=development
 	remoteWriteExtraLabels = kingpin.Flag("remote-write.extra-label", "extra label to add").
 				StringMap()
+
+	remoteWriteLabelSubstitutions = kingpin.Flag("remote-write.rename-label",
+		"Allows to rename the default labels for remote write").StringMap()
 
 	remoteWriteTimeout = kingpin.Flag("remote-write.timeout",
 		"Sets the timeout when sending request to prometheus remote write").
@@ -82,18 +80,19 @@ var (
 	mqttDebug = kingpin.Flag("mqtt.debug", "Enable MQTT debugging").
 			Default("false").String()
 
+	//TODO: should we enable loki or should we enable events at all
 	//lokiPushEnabled = kingpin.Flag("loki.enabled", "Enable push events to loki").
 	//		Bool()
 
-	lokiSourceName = kingpin.Flag("loki.source", "source to be used as label for events").
-			Default("sparkpluggw").String()
+	jobName = kingpin.Flag("job", "the job value used for prometheus remote write and loki").
+		Default("sparkpluggw").String()
 
 	pushURL = kingpin.Flag("loki.push-URL",
 		"the url of the loki push endpoint to send the logs").
 		Default("http://localhost:3100/loki/api/v1/push").String()
 
-	// it allows to add pass labels like: --loki.labels=env=production --loki.labels=app=sparkplug
-	lokiLabels = kingpin.Flag("loki.label", "Label to send to loki").
+	// it allows passing labels like: --loki.extra-label=env=production --loki.extra-label=datacenter=us-west
+	lokiExtraLabels = kingpin.Flag("loki.extra-label", "Label to send to loki").
 			StringMap()
 
 	lokiBatchWait = kingpin.Flag("loki.batch-wait",
@@ -114,7 +113,7 @@ func main() {
 
 	conf := promtail.ClientConfig{
 		PushURL:            *pushURL,
-		Labels:             buildLokiLabels(*lokiLabels),
+		Labels:             buildLokiLabels(*lokiExtraLabels),
 		BatchWait:          *lokiBatchWait,
 		BatchEntriesNumber: 10000,
 		SendLevel:          promtail.INFO,
@@ -133,22 +132,15 @@ func main() {
 	var wg sync.WaitGroup
 
 	if *remoteWriteEnabled {
-		rawURL := fmt.Sprintf("%s%s", *prometheusAddr, *remoteWritePath)
+		rawURL := fmt.Sprintf("%s", *remoteWriteEndpoint)
 		c, err := remotewrite.Client(rawURL, *remoteWriteTimeout, *remoteWriteUserAgent, true)
 		if err != nil {
 			level.Error(logger).Log("msg", err)
 			os.Exit(1)
 		}
 
-		var promLabels []prompb.Label
-
-		for k, v := range *remoteWriteExtraLabels {
-			label := prompb.Label{Name: k, Value: v}
-			promLabels = append(promLabels, label)
-		}
-
 		w := remotewrite.Writer{Client: c, Logger: logger, Gatherer: prometheus.DefaultGatherer,
-			ExtraLabels: promLabels,
+			ExtraLabels: buildRemoteWriteLabels(*remoteWriteExtraLabels), LabelSubstitutions: *remoteWriteLabelSubstitutions,
 		}
 
 		wg.Add(1)

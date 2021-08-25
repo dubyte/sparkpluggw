@@ -49,7 +49,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	log.Print("helloworld: starting server...")
+	log.Print("remote write listener: starting server...")
 
 	http.HandleFunc("/", handler)
 

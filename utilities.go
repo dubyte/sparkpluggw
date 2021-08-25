@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/prometheus/prometheus/prompb"
+
 	pb "github.com/IHI-Energy-Storage/sparkpluggw/Sparkplug"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/go-kit/log/level"
@@ -21,6 +23,46 @@ const (
 	SPDeviceID   string = "sp_device_id"
 	SPMQTTTopic  string = "sp_mqtt_topic"
 	SPMQTTServer string = "sp_mqtt_server"
+)
+
+var (
+	dataTypeName = map[uint32]string{
+		0:  "Unknown",
+		1:  "Int8",
+		2:  "Int16",
+		3:  "Int32",
+		4:  "Int64",
+		5:  "UInt8",
+		6:  "UInt16",
+		7:  "UInt32",
+		8:  "UInt64",
+		9:  "Float",
+		10: "Double",
+		11: "Boolean",
+		12: "String",
+		13: "DateTime",
+		14: "Text",
+		15: "UUID",
+		16: "DataSet",
+		17: "Bytes",
+		18: "File",
+		19: "Template",
+		20: "PropertySet",
+		21: "PropertySetList",
+		22: "Int8Array",
+		23: "Int16Array",
+		24: "Int32Array",
+		25: "Int64Array",
+		26: "UInt8Array",
+		27: "UInt16Array",
+		28: "UInt32Array",
+		29: "UInt64Array",
+		30: "FloatArray",
+		31: "DoubleArray",
+		32: "BooleanArray",
+		33: "StringArray",
+		34: "DateTimeArray",
+	}
 )
 
 func sendMQTTMsg(c mqtt.Client, pbMsg *pb.Payload,
@@ -249,17 +291,38 @@ func convertMetricToFloat(metric *pb.Payload_Metric) (float64, error) {
 	}
 }
 
-func buildLokiLabels(flagLabels map[string]string) string {
+func buildLokiLabels(extraLabels map[string]string) string {
 	labels := "{"
+
 	var l []string
-	for k, v := range flagLabels {
+
+	// job will be added as a base label for loki
+	if *jobName != "" {
+		extraLabels["job"] = *jobName
+	}
+
+	for k, v := range extraLabels {
 		l = append(l, fmt.Sprintf(`%s="%s"`, k, v))
 	}
-	if len(l) == 0 {
-		labels += `env="dev",job="sparkpluggw"`
-	} else {
-		labels += strings.Join(l, ",")
-	}
+
+	labels += strings.Join(l, ",")
+
 	labels += "}"
 	return labels
+}
+
+func buildRemoteWriteLabels(extraLabels map[string]string) []prompb.Label {
+	var promLabels []prompb.Label
+
+	// job will be added as a base label for remote write
+	if *jobName != "" {
+		extraLabels["job"] = *jobName
+	}
+
+	for k, v := range extraLabels {
+		label := prompb.Label{Name: k, Value: v}
+		promLabels = append(promLabels, label)
+	}
+
+	return promLabels
 }

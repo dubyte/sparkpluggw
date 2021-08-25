@@ -21,10 +21,11 @@ import (
 )
 
 type Writer struct {
-	Client      remote.WriteClient
-	Logger      log.Logger
-	Gatherer    prometheus.Gatherer
-	ExtraLabels []prompb.Label
+	Client             remote.WriteClient
+	Logger             log.Logger
+	Gatherer           prometheus.Gatherer
+	ExtraLabels        []prompb.Label
+	LabelSubstitutions map[string]string
 }
 
 //Write get the metrics from the gatherer using the current time it creates a remote write request
@@ -32,7 +33,7 @@ type Writer struct {
 func (w Writer) Write() {
 	timestamp := time.Now().UnixNano() / int64(time.Millisecond)
 
-	req, err := WriteRequest(w.Gatherer, timestamp, w.ExtraLabels...)
+	req, err := WriteRequest(w.Gatherer, timestamp, w.LabelSubstitutions, w.ExtraLabels...)
 	if err != nil {
 		level.Error(w.Logger).Log("msg", fmt.Sprintf("error while building remote write request: %s", err))
 		return
@@ -92,7 +93,7 @@ func ClientFromConfig(cfg remote.ClientConfig, userAgent string) (remote.WriteCl
 
 //WriteRequest get the metric families from the gatherer using passed timestamp in unix miliseconds time and returns
 // a remoteWrite request
-func WriteRequest(g prometheus.Gatherer, timeStamp int64, extraLabels ...prompb.Label) (prompb.WriteRequest, error) {
+func WriteRequest(g prometheus.Gatherer, timeStamp int64, labelSubstitutions map[string]string, extraLabels ...prompb.Label) (prompb.WriteRequest, error) {
 	var req prompb.WriteRequest
 
 	mfs, err := g.Gather()
@@ -105,7 +106,7 @@ func WriteRequest(g prometheus.Gatherer, timeStamp int64, extraLabels ...prompb.
 		for _, metric := range mf.GetMetric() {
 
 			//TODO get the instance from config
-			commonLabels := prometheusTSLabels(metric, extraLabels)
+			commonLabels := prometheusTSLabels(metric, extraLabels, labelSubstitutions)
 
 			switch mf.GetType() {
 
@@ -145,8 +146,10 @@ func WriteRequest(g prometheus.Gatherer, timeStamp int64, extraLabels ...prompb.
 				}
 
 				for _, q := range metric.GetSummary().GetQuantile() {
-					labels := append(commonLabels, prompb.Label{Name: "quantile", Value: fmt.Sprintf("%f", q.GetQuantile())})
-					ts, err := prometheusTS(timeStamp, fmt.Sprintf("%s_sum", mf.GetName()), q.GetValue(), labels)
+					summaryLabels := make([]prompb.Label, len(commonLabels))
+					copy(summaryLabels, commonLabels)
+					summaryLabels = append(summaryLabels, prompb.Label{Name: "quantile", Value: fmt.Sprintf("%f", q.GetQuantile())})
+					ts, err := prometheusTS(timeStamp, fmt.Sprintf("%s", mf.GetName()), q.GetValue(), summaryLabels)
 					if err != nil {
 						return req, fmt.Errorf("prometheusTS err: %w", err)
 					}
@@ -155,7 +158,9 @@ func WriteRequest(g prometheus.Gatherer, timeStamp int64, extraLabels ...prompb.
 
 				// add summary sum
 				{
-					ts, err := prometheusTS(timeStamp, fmt.Sprintf("%s_sum", mf.GetName()), metric.GetSummary().GetSampleSum(), commonLabels)
+					summaryLabels := make([]prompb.Label, len(commonLabels))
+					copy(summaryLabels, commonLabels)
+					ts, err := prometheusTS(timeStamp, fmt.Sprintf("%s_sum", mf.GetName()), metric.GetSummary().GetSampleSum(), summaryLabels)
 					if err != nil {
 						return req, fmt.Errorf("prometheusTS err: %w", err)
 					}
@@ -164,6 +169,8 @@ func WriteRequest(g prometheus.Gatherer, timeStamp int64, extraLabels ...prompb.
 
 				// add summary count
 				{
+					summaryLabels := make([]prompb.Label, len(commonLabels))
+					copy(summaryLabels, commonLabels)
 					ts, err := prometheusTS(timeStamp, fmt.Sprintf("%s_count", mf.GetName()), float64(metric.GetSummary().GetSampleCount()), commonLabels)
 					if err != nil {
 						return req, fmt.Errorf("prometheusTS err: %w", err)
@@ -176,8 +183,10 @@ func WriteRequest(g prometheus.Gatherer, timeStamp int64, extraLabels ...prompb.
 				}
 
 				for _, bucket := range metric.GetHistogram().GetBucket() {
-					labels := append(commonLabels, prompb.Label{Name: "le", Value: fmt.Sprintf("%f", bucket.GetUpperBound())})
-					ts, err := prometheusTS(timeStamp, fmt.Sprintf("%s_sum", mf.GetName()), float64(bucket.GetCumulativeCount()), labels)
+					historyLabels := make([]prompb.Label, len(commonLabels))
+					copy(historyLabels, commonLabels)
+					historyLabels = append(historyLabels, prompb.Label{Name: "le", Value: fmt.Sprintf("%f", bucket.GetUpperBound())})
+					ts, err := prometheusTS(timeStamp, fmt.Sprintf("%s", mf.GetName()), float64(bucket.GetCumulativeCount()), historyLabels)
 					if err != nil {
 						return req, fmt.Errorf("prometheusTS err: %w", err)
 					}
@@ -186,7 +195,9 @@ func WriteRequest(g prometheus.Gatherer, timeStamp int64, extraLabels ...prompb.
 
 				// add histogram sum
 				{
-					ts, err := prometheusTS(timeStamp, fmt.Sprintf("%s_sum", mf.GetName()), metric.GetHistogram().GetSampleSum(), commonLabels)
+					historyLabels := make([]prompb.Label, len(commonLabels))
+					copy(historyLabels, commonLabels)
+					ts, err := prometheusTS(timeStamp, fmt.Sprintf("%s_sum", mf.GetName()), metric.GetHistogram().GetSampleSum(), historyLabels)
 					if err != nil {
 						return req, fmt.Errorf("prometheusTS err: %w", err)
 					}
@@ -195,7 +206,9 @@ func WriteRequest(g prometheus.Gatherer, timeStamp int64, extraLabels ...prompb.
 
 				// add histogram count
 				{
-					ts, err := prometheusTS(timeStamp, fmt.Sprintf("%s_count", mf.GetName()), float64(metric.GetHistogram().GetSampleCount()), commonLabels)
+					historyLabels := make([]prompb.Label, len(commonLabels))
+					copy(historyLabels, commonLabels)
+					ts, err := prometheusTS(timeStamp, fmt.Sprintf("%s_count", mf.GetName()), float64(metric.GetHistogram().GetSampleCount()), historyLabels)
 					if err != nil {
 						return req, fmt.Errorf("prometheusTS err: %w", err)
 					}
@@ -226,21 +239,28 @@ func prometheusTS(timeStamp int64, metricName string, value float64, labels []pr
 }
 
 // prometheusTSLabels converts the labels from a metric family for one that can be use in the remote request.
-func prometheusTSLabels(m *dto.Metric, extra []prompb.Label) []prompb.Label {
+func prometheusTSLabels(m *dto.Metric, extra []prompb.Label, labelSubstitutions map[string]string) []prompb.Label {
 	var labels []prompb.Label
 
 	for _, mLabel := range m.GetLabel() {
 		var l prompb.Label
-		l.Name = mLabel.GetName()
+		l.Name = labelName(mLabel.GetName(), labelSubstitutions)
 		l.Value = mLabel.GetValue()
 		labels = append(labels, l)
 	}
 
 	for _, e := range extra {
 		var l prompb.Label
-		l.Name = e.GetName()
+		l.Name = labelName(e.GetName(), labelSubstitutions)
 		l.Value = e.GetValue()
 		labels = append(labels, l)
 	}
 	return labels
+}
+
+func labelName(name string, substitutions map[string]string) string {
+	if s, ok := substitutions[name]; ok && s != "" {
+		return s
+	}
+	return name
 }
