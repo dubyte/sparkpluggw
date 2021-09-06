@@ -50,7 +50,7 @@ var (
 	remoteWriteExtraLabels = kingpin.Flag("remote-write.extra-label", "extra label to add").
 				StringMap()
 
-	remoteWriteLabelSubstitutions = kingpin.Flag("remote-write.rename-label",
+	remoteWriteLabelSubstitutions = kingpin.Flag("remote-write.replace-label",
 		"Allows to rename the default labels for remote write").StringMap()
 
 	remoteWriteTimeout = kingpin.Flag("remote-write.timeout",
@@ -91,13 +91,16 @@ var (
 		"the url of the loki push endpoint to send the logs").
 		Default("http://localhost:3100/loki/api/v1/push").String()
 
-	// it allows passing labels like: --loki.extra-label=env=production --loki.extra-label=datacenter=us-west
+	// it allows passing labels like: --loki.extra-label env=production --loki.extra-label datacenter=us-west
 	lokiExtraLabels = kingpin.Flag("loki.extra-label", "Label to send to loki").
 			StringMap()
 
 	lokiBatchWait = kingpin.Flag("loki.batch-wait",
 		"Maximum amount of time to wait before sending a batch, even if that batch isn't full.").
 		Default("5s").Duration()
+
+	decisionTree = kingpin.Flag("decision-tree.file", "path to file with a decision tree defined in json").
+			Default("./decision-tree.json").String()
 
 	progname = "sparkpluggw"
 	exporter *spplugExporter
@@ -126,7 +129,7 @@ func main() {
 	}
 	defer lokiClient.Shutdown()
 
-	initSparkPlugExporter(&exporter, lokiClient)
+	initSparkPlugExporter(&exporter, lokiClient, *decisionTree)
 	prometheus.MustRegister(exporter)
 
 	var wg sync.WaitGroup

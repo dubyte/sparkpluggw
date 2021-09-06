@@ -10,16 +10,28 @@ type DecisionTree struct {
 	tree *dtree.Tree
 }
 
-func New() DecisionTree {
-	tree := []dtree.Tree{
+func New(input string) (DecisionTree, error) {
+	var result DecisionTree
+	nodes := []dtree.Tree{
 		{ID: 1, Name: "root"},
 		// xMetricIs
-		{ID: 2, Name: "isMetric", ParentID: 1, Value: "Device Control/Scan Rate ms", Operator: "eq", Key: "firstMetricIs"},
-		{ID: 3, Name: "isEvent", ParentID: 1, Value: "Device Control/Scan Rate ms", Operator: "ne", Key: "firstMetricIs"},
+		{ID: 2, ParentID: 1, Value: "Device Control/Scan Rate ms", Operator: "eq", Key: "firstMetricIs"},
+		{ID: 3, ParentID: 1, Value: "Device Control/Scan Rate ms", Operator: "ne", Key: "firstMetricIs"},
 		{ID: 4, Name: "metric", ParentID: 2},
 		{ID: 5, Name: "event", ParentID: 3},
 	}
-	return DecisionTree{dtree.CreateTree(tree)}
+	// data, err := os.ReadFile(input)
+	// if err != nil {
+	// 	return result, err
+	// }
+
+	// tree, err = dtree.LoadTree(data)
+	// if err != nil {
+	// 	return result, err
+	// }
+
+	result = DecisionTree{dtree.CreateTree(nodes)}
+	return result, nil
 }
 
 func (d DecisionTree) Resolve(payload pb.Payload, topic string) (string, error) {

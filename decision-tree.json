@@ -1,0 +1,30 @@
+[
+  {
+    "id": 1,
+    "name": "root"
+  },
+  {
+    "id": 2,
+    "parent_id": 1,
+    "key": "firstMetricIs",
+    "operator": "eq",
+    "value": "Device Control/Scan Rate ms"
+  },
+  {
+    "id": 3,
+    "parent_id": 1,
+    "key": "firstMetricIs",
+    "operator": "ne",
+    "value": "Device Control/Scan Rate ms"
+  },
+  {
+    "id": 4,
+    "parent_id": 2,
+    "Name": "metric"
+  },
+  {
+    "id": 5,
+    "parent_id": 3,
+    "Name": "event"
+  }
+]

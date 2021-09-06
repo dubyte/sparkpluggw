@@ -72,15 +72,19 @@ type spplugExporter struct {
 	versionDesc *prometheus.Desc
 	connectDesc *prometheus.Desc
 
-	// Holds the mertrics collected
+	// Holds the metrics collected
 	metrics        map[string][]prometheusmetric
 	counterMetrics map[string]*prometheus.CounterVec
-	messageRouter  router.DecisionTree
-	lokiClient     promtail.Client
+
+	// holds a decision tree to know if a message should be a metric or an event (send on exception)
+	messageRouter router.DecisionTree
+
+	// client to send msg to event
+	lokiClient promtail.Client
 }
 
 // Initialize
-func initSparkPlugExporter(e **spplugExporter, lokiClient promtail.Client) {
+func initSparkPlugExporter(e **spplugExporter, lokiClient promtail.Client, decisionTreePath string) {
 
 	if *mqttDebug == "true" {
 		mqtt.ERROR = oslog.New(os.Stdout, "MQTT ERROR    ", oslog.Ltime)
@@ -124,10 +128,17 @@ func initSparkPlugExporter(e **spplugExporter, lokiClient promtail.Client) {
 
 	(*e).client = mqtt.NewClient(options)
 
+	level.Debug(logger).Log("msg", "Initializing Exporter decision tree")
+
+	decisionTree, err := router.New(decisionTreePath)
+	if err != nil {
+		level.Error(logger).Log("msg", fmt.Sprintf("loading decision tree failed: %s", err.Error()))
+		os.Exit(1)
+	}
+
+	(*e).messageRouter = decisionTree
+
 	level.Debug(logger).Log("msg", fmt.Sprint("Initializing Exporter Metrics and Data"))
-
-	(*e).messageRouter = router.New()
-
 	(*e).initializeMetricsAndData()
 
 	if token := (*e).client.Connect(); token.Wait() && token.Error() != nil {
@@ -239,7 +250,7 @@ func (e *spplugExporter) handleMetric(c mqtt.Client, pbMsg pb.Payload, topic str
 		metricLabels := siteLabels
 		metricLabelValues := cloneLabelSet(siteLabelValues)
 
-		newLabelname, metricName, err := getMetricName(metric)
+		newLabelName, metricName, err := getMetricName(metric)
 		if err != nil {
 			if metricName != "Device Control/Rebirth" {
 				level.Error(logger).Log("msg", fmt.Sprintf("Error: %s %s %v", siteLabelValues["sp_edge_node_id"], metricName, err))
@@ -250,9 +261,9 @@ func (e *spplugExporter) handleMetric(c mqtt.Client, pbMsg pb.Payload, topic str
 		}
 
 		// TODO: check why this code fails with ("Device Control/Scan Rate ms") And why the err check was after this block
-		if newLabelname != nil {
-			for list := 0; list < len(newLabelname); list++ {
-				parts := strings.Split(newLabelname[list], ":")
+		if newLabelName != nil {
+			for list := 0; list < len(newLabelName); list++ {
+				parts := strings.Split(newLabelName[list], ":")
 
 				metricLabels = append(metricLabels, parts[0])
 				metricLabelValues[parts[0]] = string(parts[1])
@@ -283,7 +294,7 @@ func (e *spplugExporter) handleMetric(c mqtt.Client, pbMsg pb.Payload, topic str
 			// If they are we update an existing metric
 			if !labelSetExists {
 
-				eventString = "Creating new timeseries for existing metric"
+				eventString = "Creating new time series for existing metric"
 				newMetric.promlabel = append(newMetric.promlabel,
 					metricLabels...)
 
@@ -362,8 +373,8 @@ func (e *spplugExporter) handleEvent(pbMsg pb.Payload, topic string) {
 
 	//bus id too, event_type
 	//TODO:time should be taken from event.
-	e.lokiClient.Infof("time = %s topic = %s event_name = %s event_value = %s event_type = %s, edge_node = %s",
-		time.Now().String(), topic, pbMsg.GetMetrics()[0].GetName(), eventValue, dataTypeName[valueType], edgeNodeId)
+	e.lokiClient.Infof("time = %d topic = %s event_name = %s event_value = %s event_type = %s, edge_node = %s",
+		pbMsg.GetTimestamp(), topic, pbMsg.GetMetrics()[0].GetName(), eventValue, dataTypeName[valueType], edgeNodeId)
 }
 
 // If the edge node is unique (this is the first time seeing it), then
