@@ -252,7 +252,7 @@ func (e *spplugExporter) handleMetric(c mqtt.Client, pbMsg pb.Payload, topic str
 
 		newLabelName, metricName, err := getMetricName(metric)
 		if err != nil {
-			if metricName != "Device Control/Rebirth" {
+			if metricName != "Device Control/Rebirth" && metricName != "Scan Rate ms" {
 				level.Error(logger).Log("msg", fmt.Sprintf("Error: %s %s %v", siteLabelValues["sp_edge_node_id"], metricName, err))
 				e.counterMetrics[SPPushInvalidMetric].With(siteLabelValues).Inc()
 			}
