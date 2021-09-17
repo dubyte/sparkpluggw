@@ -20,10 +20,6 @@ func New(input string) (DecisionTree, error) {
 		{ID: 4, Name: "metric", ParentID: 2},
 		{ID: 5, Name: "event", ParentID: 3},
 	}
-	// data, err := os.ReadFile(input)
-	// if err != nil {
-	// 	return result, err
-	// }
 
 	// tree, err = dtree.LoadTree(data)
 	// if err != nil {
@@ -34,15 +30,20 @@ func New(input string) (DecisionTree, error) {
 	return result, nil
 }
 
-func (d DecisionTree) Resolve(payload pb.Payload, topic string) (string, error) {
-	msg := make(map[string]interface{})
-	msg["firstMetricIs"] = firstMetric(payload)
-	node, err := d.tree.Resolve(msg)
+func (d DecisionTree) Resolve(topic string, payload pb.Payload) (string, error) {
+	attr := PayloadAttributes(topic, payload)
+	node, err := d.tree.Resolve(attr)
 	if err != nil {
 		return "", err
 	}
 
 	return node.Name, nil
+}
+
+func PayloadAttributes(topic string, payload pb.Payload) map[string]interface{} {
+	attr := make(map[string]interface{})
+	attr["firstMetricIs"] = firstMetric(payload)
+	return attr
 }
 
 func firstMetric(payload pb.Payload) string {

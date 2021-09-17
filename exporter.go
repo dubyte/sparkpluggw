@@ -15,6 +15,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/golang/protobuf/proto" //nolint
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/tkanos/go-dtree"
 )
 
 var mutex sync.RWMutex
@@ -77,14 +78,14 @@ type spplugExporter struct {
 	counterMetrics map[string]*prometheus.CounterVec
 
 	// holds a decision tree to know if a message should be a metric or an event (send on exception)
-	messageRouter router.DecisionTree
+	decisionTree *dtree.Tree
 
 	// client to send msg to event
 	lokiClient promtail.Client
 }
 
 // Initialize
-func initSparkPlugExporter(e **spplugExporter, lokiClient promtail.Client, decisionTreePath string) {
+func initSparkPlugExporter(e **spplugExporter, lokiClient promtail.Client) {
 
 	if *mqttDebug == "true" {
 		mqtt.ERROR = oslog.New(os.Stdout, "MQTT ERROR    ", oslog.Ltime)
@@ -130,13 +131,13 @@ func initSparkPlugExporter(e **spplugExporter, lokiClient promtail.Client, decis
 
 	level.Debug(logger).Log("msg", "Initializing Exporter decision tree")
 
-	decisionTree, err := router.New(decisionTreePath)
+	dt, err := loadDecisionTree(*decisionTreePath)
 	if err != nil {
-		level.Error(logger).Log("msg", fmt.Sprintf("loading decision tree failed: %s", err.Error()))
-		os.Exit(1)
+		level.Error(logger).Log("msg", fmt.Sprintf("decision tree load failed: %s", err))
+		level.Info(logger).Log("mgs", "decision tree will return metric all the times.")
 	}
 
-	(*e).messageRouter = decisionTree
+	(*e).decisionTree = dt
 
 	level.Debug(logger).Log("msg", fmt.Sprint("Initializing Exporter Metrics and Data"))
 	(*e).initializeMetricsAndData()
@@ -209,21 +210,21 @@ func (e *spplugExporter) receiveMessage(client mqtt.Client, m mqtt.Message) {
 	topic := m.Topic()
 	level.Debug(logger).Log("msg", fmt.Sprintf("Received message: %s", topic))
 	level.Debug(logger).Log("msg", fmt.Sprintf("%s", payload.String()))
-
-	msgIs, err := e.messageRouter.Resolve(payload, topic)
+	attr := router.PayloadAttributes(topic, payload)
+	node, err := e.decisionTree.Resolve(attr)
 	if err != nil {
 		level.Error(logger).Log("msg", fmt.Sprintf("messageRouter error: %v", err))
 		return
 	}
 
-	if msgIs == "metric" {
-		e.handleMetric(client, payload, topic)
+	if node.Name == "metric" {
+		e.handleMetric(client, topic, payload)
 	} else {
-		e.handleEvent(payload, topic)
+		e.handleEvent(topic, payload)
 	}
 }
 
-func (e *spplugExporter) handleMetric(c mqtt.Client, pbMsg pb.Payload, topic string) {
+func (e *spplugExporter) handleMetric(c mqtt.Client, topic string, pbMsg pb.Payload) {
 	mutex.Lock()
 	defer mutex.Unlock()
 
@@ -337,14 +338,16 @@ func (e *spplugExporter) handleMetric(c mqtt.Client, pbMsg pb.Payload, topic str
 }
 
 const (
-	positionEdgeNodeID = 4
+	positionEdgeNodeID = 3
 )
 
-func (e *spplugExporter) handleEvent(pbMsg pb.Payload, topic string) {
+func (e *spplugExporter) handleEvent(topic string, pbMsg pb.Payload) {
 	if len(pbMsg.GetMetrics()) == 0 {
 		level.Info(logger).Log("msg", "skipping event without content")
 		return
 	}
+
+	topic = trimTopicPrefix(topic, *prefix)
 
 	valueType := pbMsg.GetMetrics()[0].GetDatatype()
 	var value interface{}
@@ -371,8 +374,6 @@ func (e *spplugExporter) handleEvent(pbMsg pb.Payload, topic string) {
 		edgeNodeId = topicParts[positionEdgeNodeID]
 	}
 
-	//bus id too, event_type
-	//TODO:time should be taken from event.
 	e.lokiClient.Infof("time = %d topic = %s event_name = %s event_value = %s event_type = %s, edge_node = %s",
 		pbMsg.GetTimestamp(), topic, pbMsg.GetMetrics()[0].GetName(), eventValue, dataTypeName[valueType], edgeNodeId)
 }

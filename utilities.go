@@ -3,9 +3,11 @@ package main
 import (
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/tkanos/go-dtree"
 
 	pb "github.com/IHI-Energy-Storage/sparkpluggw/Sparkplug"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
@@ -149,8 +151,7 @@ func createNewMetric(metricName string, metricLabels []string) *prometheus.Gauge
 
 func prepareLabelsAndValues(topic string) ([]string, prometheus.Labels, bool) {
 	var labels []string
-	t := strings.TrimPrefix(topic, *prefix)
-	t = strings.TrimPrefix(t, "/")
+	t := trimTopicPrefix(topic, *prefix)
 	parts := strings.Split(t, "/")
 
 	// 6.1.3 covers 9 message types, only process device data
@@ -189,6 +190,11 @@ func prepareLabelsAndValues(topic string) ([]string, prometheus.Labels, bool) {
 	labelValues[SPDeviceID] = parts[4]
 
 	return labels, labelValues, true
+}
+
+func trimTopicPrefix(topic, prefix string) string {
+	t := strings.TrimPrefix(topic, prefix)
+	return strings.TrimPrefix(t, "/")
 }
 
 func getLabelSet() []string {
@@ -325,4 +331,18 @@ func buildRemoteWriteLabels(extraLabels map[string]string) []prompb.Label {
 	}
 
 	return promLabels
+}
+
+func loadDecisionTree(filePath string) (*dtree.Tree, error) {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("readFile: %s err: %w", filePath, err)
+	}
+
+	t, err := dtree.LoadTree(data)
+	if err != nil {
+		return nil, err
+	}
+
+	return t, nil
 }

@@ -80,10 +80,6 @@ var (
 	mqttDebug = kingpin.Flag("mqtt.debug", "Enable MQTT debugging").
 			Default("false").String()
 
-	//TODO: should we enable loki or should we enable events at all
-	//lokiPushEnabled = kingpin.Flag("loki.enabled", "Enable push events to loki").
-	//		Bool()
-
 	jobName = kingpin.Flag("job", "the job value used for prometheus remote write and loki").
 		Default("sparkpluggw").String()
 
@@ -99,8 +95,8 @@ var (
 		"Maximum amount of time to wait before sending a batch, even if that batch isn't full.").
 		Default("5s").Duration()
 
-	decisionTree = kingpin.Flag("decision-tree.file", "path to file with a decision tree defined in json").
-			Default("./decision-tree.json").String()
+	decisionTreePath = kingpin.Flag("decision-tree.file", "path to file with a decision tree defined in json").
+				Default("").String()
 
 	progname = "sparkpluggw"
 	exporter *spplugExporter
@@ -108,6 +104,7 @@ var (
 )
 
 func main() {
+	kingpin.CommandLine.HelpFlag.Short('h')
 	var promlogConfig promlog.Config
 	flag.AddFlags(kingpin.CommandLine, &promlogConfig)
 	kingpin.Parse()
@@ -129,7 +126,7 @@ func main() {
 	}
 	defer lokiClient.Shutdown()
 
-	initSparkPlugExporter(&exporter, lokiClient, *decisionTree)
+	initSparkPlugExporter(&exporter, lokiClient)
 	prometheus.MustRegister(exporter)
 
 	var wg sync.WaitGroup
