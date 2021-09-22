@@ -9,7 +9,7 @@ import (
 	"time"
 
 	pb "github.com/IHI-Energy-Storage/sparkpluggw/Sparkplug"
-	"github.com/IHI-Energy-Storage/sparkpluggw/router"
+	"github.com/IHI-Energy-Storage/sparkpluggw/message"
 	"github.com/afiskon/promtail-client/promtail"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/go-kit/log/level"
@@ -133,11 +133,11 @@ func initSparkPlugExporter(e **spplugExporter, lokiClient promtail.Client) {
 
 	dt, err := loadDecisionTree(*decisionTreePath)
 	if err != nil {
-		level.Error(logger).Log("msg", fmt.Sprintf("decision tree load failed: %s", err))
-		level.Info(logger).Log("mgs", "decision tree will return metric all the times.")
+		level.Info(logger).Log("msg", fmt.Sprintf("decision tree load failed: %s", err))
+		level.Info(logger).Log("mgs", "all messages are going to be handled by metrics handler.")
+	} else {
+		(*e).decisionTree = dt
 	}
-
-	(*e).decisionTree = dt
 
 	level.Debug(logger).Log("msg", fmt.Sprint("Initializing Exporter Metrics and Data"))
 	(*e).initializeMetricsAndData()
@@ -210,18 +210,24 @@ func (e *spplugExporter) receiveMessage(client mqtt.Client, m mqtt.Message) {
 	topic := m.Topic()
 	level.Debug(logger).Log("msg", fmt.Sprintf("Received message: %s", topic))
 	level.Debug(logger).Log("msg", fmt.Sprintf("%s", payload.String()))
-	attr := router.PayloadAttributes(topic, payload)
-	node, err := e.decisionTree.Resolve(attr)
-	if err != nil {
-		level.Error(logger).Log("msg", fmt.Sprintf("messageRouter error: %v", err))
+
+	if e.decisionTree != nil {
+		attr := message.Attributes(topic, payload)
+		node, err := e.decisionTree.Resolve(attr)
+		if err != nil {
+			level.Error(logger).Log("msg", fmt.Sprintf("messageRouter error: %v", err))
+			return
+		}
+
+		if node.Name == "metric" {
+			e.handleMetric(client, topic, payload)
+		} else {
+			e.handleEvent(topic, payload)
+		}
 		return
 	}
 
-	if node.Name == "metric" {
-		e.handleMetric(client, topic, payload)
-	} else {
-		e.handleEvent(topic, payload)
-	}
+	e.handleMetric(client, topic, payload)
 }
 
 func (e *spplugExporter) handleMetric(c mqtt.Client, topic string, pbMsg pb.Payload) {

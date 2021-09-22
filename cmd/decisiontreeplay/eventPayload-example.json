@@ -1,0 +1,12 @@
+{
+  "timestamp": "1632139517114",
+  "metrics": [
+    {
+      "name": "TestMetric1",
+      "timestamp": "1632139517114",
+      "datatype": 11,
+      "booleanValue": false
+    }
+  ],
+  "seq": "0"
+}

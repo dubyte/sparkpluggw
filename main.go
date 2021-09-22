@@ -41,7 +41,6 @@ var (
 		"the endpoint where prometheus is listen for remote write requests").
 		Default("http://localhost:9090/api/v1/write").URL()
 
-	// TODO: be more specific and include the version
 	remoteWriteUserAgent = kingpin.Flag("remote-write.user-agent",
 		"the user agent that will be be used to identify the exporter in prometheus").
 		Default("sparkpluggw exporter").String()

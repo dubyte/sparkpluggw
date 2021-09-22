@@ -1,0 +1,18 @@
+{
+  "timestamp": "1632139517114",
+  "metrics": [
+    {
+      "name": "Device Control/Scan Rate ms",
+      "timestamp": "1632139517114",
+      "datatype": 3,
+      "intValue": 6000
+    },
+    {
+      "name": "TestMetric1",
+      "timestamp": "1632139517114",
+      "datatype": 11,
+      "booleanValue": false
+    }
+  ],
+  "seq": "0"
+}
