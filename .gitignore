@@ -1,2 +1,8 @@
-vendor
-mqttgateway
+# binary 
+sparkpluggw
+
+# IDEs
+.idea/
+
+# config files
+config.args
