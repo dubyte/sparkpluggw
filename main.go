@@ -130,6 +130,22 @@ func main() {
 
 	var wg sync.WaitGroup
 
+	webInterfaceEnabled := !*disableWebInterface
+
+	if webInterfaceEnabled {
+		http.Handle(*metricsPath, promhttp.Handler())
+		level.Info(logger).Log("msg", fmt.Sprintf("Listening on %s", *listenAddress))
+		wg.Add(1)
+		go func(wg *sync.WaitGroup) {
+			defer wg.Done()
+			err := http.ListenAndServe(*listenAddress, nil)
+			if err != nil {
+				level.Error(logger).Log("msg", err)
+				os.Exit(1)
+			}
+		}(&wg)
+	}
+
 	if *remoteWriteEnabled {
 		rawURL := fmt.Sprintf("%s", *remoteWriteEndpoint)
 		c, err := remotewrite.Client(rawURL, *remoteWriteTimeout, *remoteWriteUserAgent, true)
@@ -148,22 +164,6 @@ func main() {
 			for {
 				w.Write()
 				<-time.Tick(*remoteWriteEvery)
-			}
-		}(&wg)
-	}
-
-	webInterfaceEnabled := !*disableWebInterface
-
-	if webInterfaceEnabled {
-		http.Handle(*metricsPath, promhttp.Handler())
-		level.Info(logger).Log("msg", fmt.Sprintf("Listening on %s", *listenAddress))
-		wg.Add(1)
-		go func(wg *sync.WaitGroup) {
-			defer wg.Done()
-			err := http.ListenAndServe(*listenAddress, nil)
-			if err != nil {
-				level.Error(logger).Log("msg", err)
-				os.Exit(1)
 			}
 		}(&wg)
 	}

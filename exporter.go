@@ -200,19 +200,19 @@ func (e *spplugExporter) Collect(ch chan<- prometheus.Metric) {
 }
 
 func (e *spplugExporter) receiveMessage(client mqtt.Client, m mqtt.Message) {
-	var payload pb.Payload
+	var pbMsg pb.Payload
 
 	// Unmarshal MQTT message into Google Protocol Buffer
-	if err := proto.Unmarshal(m.Payload(), &payload); err != nil {
+	if err := proto.Unmarshal(m.Payload(), &pbMsg); err != nil {
 		level.Error(logger).Log("msg", fmt.Sprintf("Error decoding GPB, message: %v", err))
 		return
 	}
 	topic := m.Topic()
 	level.Debug(logger).Log("msg", fmt.Sprintf("Received message: %s", topic))
-	level.Debug(logger).Log("msg", fmt.Sprintf("%s", payload.String()))
+	level.Debug(logger).Log("msg", fmt.Sprintf("%s", pbMsg.String()))
 
 	if e.decisionTree != nil {
-		attr := message.Attributes(topic, payload)
+		attr := message.Attributes(topic, pbMsg)
 		node, err := e.decisionTree.Resolve(attr)
 		if err != nil {
 			level.Error(logger).Log("msg", fmt.Sprintf("messageRouter error: %v", err))
@@ -220,14 +220,14 @@ func (e *spplugExporter) receiveMessage(client mqtt.Client, m mqtt.Message) {
 		}
 
 		if node.Name == "metric" {
-			e.handleMetric(client, topic, payload)
+			e.handleMetric(client, topic, pbMsg)
 		} else {
-			e.handleEvent(topic, payload)
+			e.handleEvent(topic, pbMsg)
 		}
 		return
 	}
 
-	e.handleMetric(client, topic, payload)
+	e.handleMetric(client, topic, pbMsg)
 }
 
 func (e *spplugExporter) handleMetric(c mqtt.Client, topic string, pbMsg pb.Payload) {
@@ -267,7 +267,6 @@ func (e *spplugExporter) handleMetric(c mqtt.Client, topic string, pbMsg pb.Payl
 			continue
 		}
 
-		// TODO: check why this code fails with ("Device Control/Scan Rate ms") And why the err check was after this block
 		if newLabelName != nil {
 			for list := 0; list < len(newLabelName); list++ {
 				parts := strings.Split(newLabelName[list], ":")
@@ -276,6 +275,16 @@ func (e *spplugExporter) handleMetric(c mqtt.Client, topic string, pbMsg pb.Payl
 				metricLabelValues[parts[0]] = string(parts[1])
 			}
 		}
+
+		// TODO: check why this code fails with ("Device Control/Scan Rate ms") And why the err check was after `if newLabelName != nil {` block
+		// if err != nil {
+		// 	if metricName != "Device Control/Rebirth" && metricName != "Scan Rate ms" {
+		// 		log.Errorf("Error: %s %s %v  \n", siteLabelValues["sp_edge_node_id"], metricName, err)
+		// 		e.counterMetrics[SPPushInvalidMetric].With(siteLabelValues).Inc()
+		// 	}
+
+		// 	continue
+		// }
 
 		// if metricName is not within the e.metrics OR
 		// if metricLabels (note you will need a function to compare maps) is not within e.metrics[metricName], then you need to create a new metric

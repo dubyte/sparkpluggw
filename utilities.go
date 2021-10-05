@@ -297,6 +297,22 @@ func convertMetricToFloat(metric *pb.Payload_Metric) (float64, error) {
 	}
 }
 
+func buildRemoteWriteLabels(extraLabels map[string]string) []prompb.Label {
+	var promLabels []prompb.Label
+
+	// job will be added as a base label for remote write
+	if *jobName != "" {
+		extraLabels["job"] = *jobName
+	}
+
+	for k, v := range extraLabels {
+		label := prompb.Label{Name: k, Value: v}
+		promLabels = append(promLabels, label)
+	}
+
+	return promLabels
+}
+
 func buildLokiLabels(extraLabels map[string]string) string {
 	labels := "{"
 
@@ -315,22 +331,6 @@ func buildLokiLabels(extraLabels map[string]string) string {
 
 	labels += "}"
 	return labels
-}
-
-func buildRemoteWriteLabels(extraLabels map[string]string) []prompb.Label {
-	var promLabels []prompb.Label
-
-	// job will be added as a base label for remote write
-	if *jobName != "" {
-		extraLabels["job"] = *jobName
-	}
-
-	for k, v := range extraLabels {
-		label := prompb.Label{Name: k, Value: v}
-		promLabels = append(promLabels, label)
-	}
-
-	return promLabels
 }
 
 func loadDecisionTree(filePath string) (*dtree.Tree, error) {
