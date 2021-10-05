@@ -1,0 +1,25 @@
+# this is a comment
+# empty new lines between parameters are not supported
+# Doubles Quotes or single quotes are not recommended
+--web.listen-address=:9337
+--web.telemetry-path=/metrics
+--web.disable-telemetry
+#--remote-write.enabled
+#--remote-write.endpoint=http://localhost:9090/api/v1/write
+#--remote-write.user-agent=sparkpluggw exporter
+# remote-write.extra-label can be repeated to add more replacements
+# --remote-write.extra-label env=development
+# --remote-write.extra-label server=fancy
+# remote-write.replace-label can be repeated to add more replacements
+# --remote-write.replace-label sp_namespace=namespace
+# --remote-write.replace-label sp_group_id=group
+# --remote-write.timeout=30s
+# --remote-write.send-every=30s
+--mqtt.broker-address=tcp://localhost:1883
+--mqtt.topic=prometheus/#
+--mqtt.prefix=prometheus
+--mqtt.client-id=
+#--mqtt.debug=true
+--job=sparkpluggw
+--log.level=info
+--log.format=logger:stderr

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	oslog "log"
 	"os"
 	"strings"
@@ -126,7 +125,8 @@ func initSparkPlugExporter(e **spplugExporter) {
 		log.Fatal(token.Error())
 	}
 
-	(*e).client.Subscribe(*topic, 2, (*e).receiveMessage())
+	// TODO: is it needed?
+	//(*e).client.Subscribe(*topic, 2, (*e).receiveMessage())
 }
 
 func (e *spplugExporter) Describe(ch chan<- *prometheus.Desc) {
@@ -177,128 +177,139 @@ func (e *spplugExporter) Collect(ch chan<- prometheus.Metric) {
 	}
 }
 
-func (e *spplugExporter) receiveMessage() func(mqtt.Client, mqtt.Message) {
-	return func(c mqtt.Client, m mqtt.Message) {
-		mutex.Lock()
-		defer mutex.Unlock()
+func (e *spplugExporter) receiveMessage(client mqtt.Client, m mqtt.Message) {
+	var pbMsg pb.Payload
 
-		var   pbMsg pb.Payload
-		var   eventString string
+	// Unmarshal MQTT message into Google Protocol Buffer
+	if err := proto.Unmarshal(m.Payload(), &pbMsg); err != nil {
+		log.Errorf("Error decoding GPB, message: %v\n", err)
+		return
+	}
+	topic := m.Topic()
+	log.Debugf("Received message: %s\n", topic)
+	log.Debugf("%s\n", pbMsg.String())
 
-		// Unmarshal MQTT message into Google Protocol Buffer
-		if err := proto.Unmarshal(m.Payload(), &pbMsg); err != nil {
-			log.Errorf("Error decoding GPB, message: %v\n", err)
-			return
-		}
+	e.handleMetric(client, topic, pbMsg)
+}
 
-		topic := m.Topic()
-		log.Debugf("Received message: %s\n", topic)
-		log.Debugf("%s\n", pbMsg.String())
+func (e *spplugExporter) handleMetric(c mqtt.Client, topic string, pbMsg pb.Payload) {
+	mutex.Lock()
+	defer mutex.Unlock()
 
-		// Get the labels and value for the labels from the topic and constants
-		siteLabels, siteLabelValues, processMetric := prepareLabelsAndValues(topic)
+	var eventString string
 
-		if !processMetric {
-			return
-		}
+	// Get the labels and value for the labels from the topic and constants
+	siteLabels, siteLabelValues, processMetric := prepareLabelsAndValues(topic)
 
-		// Process this edge node, if it is unique start the re-birth process
-		e.evaluateEdgeNode(c, siteLabelValues["sp_namespace"],
-			siteLabelValues["sp_group_id"],
-			siteLabelValues["sp_edge_node_id"])
+	if !processMetric {
+		return
+	}
 
-		metricList := pbMsg.GetMetrics()
-		log.Debugf("Received message in processMetric: %s\n", metricList)
+	// Process this edge node, if it is unique start the re-birth process
+	e.evaluateEdgeNode(c, siteLabelValues[SPNamespace],
+		siteLabelValues[SPGroupID],
+		siteLabelValues[SPEdgeNodeID])
 
-		for _, metric := range metricList {
+	metricList := pbMsg.GetMetrics()
+	log.Debugf("Received message in processMetric: %s\n", metricList)
 
-			var newMetric prometheusmetric
-			metricLabels := siteLabels
-			metricLabelValues := cloneLabelSet(siteLabelValues)
+	for _, metric := range metricList {
 
-			newLabelname, metricName, err := getMetricName(metric)
+		var newMetric prometheusmetric
+		metricLabels := siteLabels
+		metricLabelValues := cloneLabelSet(siteLabelValues)
 
-			if newLabelname != nil {
-				for list := 0; list < len(newLabelname); list++ {
-					parts := strings.Split(newLabelname[list], ":")
-
-					metricLabels = append(metricLabels, parts[0])
-					metricLabelValues[parts[0]] = string(parts[1])
-				}
+		newLabelName, metricName, err := getMetricName(metric)
+		if err != nil {
+			if metricName != "Device Control/Rebirth" && metricName != "Scan Rate ms" {
+				log.Errorf("Error: %s %s %v  \n", siteLabelValues["sp_edge_node_id"], metricName, err)
+				e.counterMetrics[SPPushInvalidMetric].With(siteLabelValues).Inc()
 			}
 
-			if err != nil {
-				if metricName != "Device Control/Rebirth" {
-					log.Errorf("Error: %s %s %v  \n", siteLabelValues["sp_edge_node_id"], metricName, err)
-					e.counterMetrics[SPPushInvalidMetric].With(siteLabelValues).Inc()
-				}
+			continue
+		}
 
-				continue
+		if newLabelName != nil {
+			for list := 0; list < len(newLabelName); list++ {
+				parts := strings.Split(newLabelName[list], ":")
+
+				metricLabels = append(metricLabels, parts[0])
+				metricLabelValues[parts[0]] = string(parts[1])
 			}
+		}
 
-			// if metricName is not within the e.metrics OR
-			// if metricLabels (note you will need a function to compare maps) is not within e.metrics[metricName], then you need to create a new metric
-			_, metricNameExists := e.metrics[metricName]
-			var labelIndex int
-			var labelSetExists bool
+		// TODO: check why this code fails with ("Device Control/Scan Rate ms") And why the err check was after `if newLabelName != nil {` block
+		// if err != nil {
+		// 	if metricName != "Device Control/Rebirth" && metricName != "Scan Rate ms" {
+		// 		log.Errorf("Error: %s %s %v  \n", siteLabelValues["sp_edge_node_id"], metricName, err)
+		// 		e.counterMetrics[SPPushInvalidMetric].With(siteLabelValues).Inc()
+		// 	}
 
-			// If the metric name exists in the map, that means that we
-			// have seen this metric before.   However due to the customized
-			// label support, it's possible that we can use an existing metric
-			// or need to create a new one.
+		// 	continue
+		// }
 
-			if metricNameExists {
-				// Each entry under a metricName contains a set of label names
-				// and a pointer to the metric.   This is what makes a time
-				// series unique, so if the label names we received are not
-				// contained in the list, we need to create a new entry
+		// if metricName is not within the e.metrics OR
+		// if metricLabels (note you will need a function to compare maps) is not within e.metrics[metricName], then you need to create a new metric
+		_, metricNameExists := e.metrics[metricName]
+		var labelIndex int
+		var labelSetExists bool
 
-				labelSetExists, labelIndex = compareLabelSet(e.metrics[metricName],
-					metricLabels)
+		// If the metric name exists in the map, that means that we
+		// have seen this metric before.   However due to the customized
+		// label support, it's possible that we can use an existing metric
+		// or need to create a new one.
 
-				// If the labels are not there, we create a new metric.
-				// If they are we update an existing metric
-				if !labelSetExists {
+		if metricNameExists {
+			// Each entry under a metricName contains a set of label names
+			// and a pointer to the metric.   This is what makes a time
+			// series unique, so if the label names we received are not
+			// contained in the list, we need to create a new entry
 
-					eventString = "Creating new timeseries for existing metric"
-					newMetric.promlabel = append(newMetric.promlabel,
-						metricLabels...)
+			labelSetExists, labelIndex = compareLabelSet(e.metrics[metricName],
+				metricLabels)
 
-					newMetric.prommetric = createNewMetric(metricName,
-						metricLabels)
+			// If the labels are not there, we create a new metric.
+			// If they are we update an existing metric
+			if !labelSetExists {
 
-					labelIndex = len(e.metrics[metricName])
-
-					e.metrics[metricName] = append(e.metrics[metricName],
-						newMetric)
-				} else {
-					eventString = "Updating metric"
-					e.metrics[metricName][labelIndex].promlabel = metricLabels
-				}
-			} else {
-				eventString = "Creating metric"
+				eventString = "Creating new timeseries for existing metric"
 				newMetric.promlabel = append(newMetric.promlabel,
 					metricLabels...)
+
 				newMetric.prommetric = createNewMetric(metricName,
 					metricLabels)
-				labelIndex = 0
+
+				labelIndex = len(e.metrics[metricName])
+
 				e.metrics[metricName] = append(e.metrics[metricName],
 					newMetric)
-			}
-			if metricVal, err := convertMetricToFloat(metric); err != nil {
-				log.Debugf("Error %v converting data type for metric %s\n",
-					err, metricName)
 			} else {
-				log.Infof("%s: name (%s) value (%g) labels: (%s)\n",
-					eventString, metricName, metricVal, metricLabelValues)
-
-				log.Debugf("metriclabels: (%s) siteLabelValues: (%s)\n",
-					metricLabels, siteLabelValues)
-
-				e.metrics[metricName][labelIndex].prommetric.With(metricLabelValues).Set(metricVal)
-				e.metrics[SPLastTimePushedMetric][0].prommetric.With(siteLabelValues).SetToCurrentTime()
-				e.counterMetrics[SPPushTotalMetric].With(siteLabelValues).Inc()
+				eventString = "Updating metric"
+				e.metrics[metricName][labelIndex].promlabel = metricLabels
 			}
+		} else {
+			eventString = "Creating metric"
+			newMetric.promlabel = append(newMetric.promlabel,
+				metricLabels...)
+			newMetric.prommetric = createNewMetric(metricName,
+				metricLabels)
+			labelIndex = 0
+			e.metrics[metricName] = append(e.metrics[metricName],
+				newMetric)
+		}
+		if metricVal, err := convertMetricToFloat(metric); err != nil {
+			log.Debugf("Error %v converting data type for metric %s\n",
+				err, metricName)
+		} else {
+			log.Infof("%s: name (%s) value (%g) labels: (%s)\n",
+				eventString, metricName, metricVal, metricLabelValues)
+
+			log.Debugf("metriclabels: (%s) siteLabelValues: (%s)\n",
+				metricLabels, siteLabelValues)
+
+			e.metrics[metricName][labelIndex].prommetric.With(metricLabelValues).Set(metricVal)
+			e.metrics[SPLastTimePushedMetric][0].prommetric.With(siteLabelValues).SetToCurrentTime()
+			e.counterMetrics[SPPushTotalMetric].With(siteLabelValues).Inc()
 		}
 	}
 }
@@ -343,7 +354,7 @@ func (e *spplugExporter) reincarnate(namespace string, group string,
 
 		topic := namespace + "/" + group + "/NCMD/" + nodeID
 
-		for true {
+		for {
 			if e.client.IsConnectionOpen() {
 				log.Infof("Reincarnate: %s\n", topic)
 
@@ -386,7 +397,7 @@ func (e *spplugExporter) initializeMetricsAndData() {
 	e.counterMetrics[SPPushTotalMetric] = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: SPPushTotalMetric,
-			Help: fmt.Sprintf("Number of messages published on a MQTT topic"),
+			Help: "Number of messages published on a MQTT topic",
 		},
 		siteLabels,
 	)
@@ -396,7 +407,7 @@ func (e *spplugExporter) initializeMetricsAndData() {
 	test.prommetric = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: SPLastTimePushedMetric,
-			Help: fmt.Sprintf("Last time a metric was pushed to a MQTT topic"),
+			Help: "Last time a metric was pushed to a MQTT topic",
 		},
 		siteLabels,
 	)
@@ -407,7 +418,7 @@ func (e *spplugExporter) initializeMetricsAndData() {
 	e.counterMetrics[SPPushInvalidMetric] = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: SPPushInvalidMetric,
-			Help: fmt.Sprintf("Total non-compliant metric names received"),
+			Help: "Total non-compliant metric names received",
 		},
 		siteLabels,
 	)
@@ -417,7 +428,7 @@ func (e *spplugExporter) initializeMetricsAndData() {
 	e.counterMetrics[SPConnectionCount] = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: SPConnectionCount,
-			Help: fmt.Sprintf("Total MQTT connections established"),
+			Help: "Total MQTT connections established",
 		},
 		serviceLabels,
 	)
@@ -427,7 +438,7 @@ func (e *spplugExporter) initializeMetricsAndData() {
 	e.counterMetrics[SPDisconnectionCount] = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: SPDisconnectionCount,
-			Help: fmt.Sprintf("Total MQTT disconnections"),
+			Help: "Total MQTT disconnections",
 		},
 		serviceLabels,
 	)
@@ -437,7 +448,7 @@ func (e *spplugExporter) initializeMetricsAndData() {
 	e.counterMetrics[SPReincarnationAttempts] = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: SPReincarnationAttempts,
-			Help: fmt.Sprintf("Total NCMD message attempts"),
+			Help: "Total NCMD message attempts",
 		},
 		edgeNodeLabels,
 	)
@@ -447,7 +458,7 @@ func (e *spplugExporter) initializeMetricsAndData() {
 	e.counterMetrics[SPReincarnationFailures] = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: SPReincarnationFailures,
-			Help: fmt.Sprintf("Total NCMD message failures"),
+			Help: "Total NCMD message failures",
 		},
 		edgeNodeLabels,
 	)
@@ -457,7 +468,7 @@ func (e *spplugExporter) initializeMetricsAndData() {
 	e.counterMetrics[SPReincarnationSuccess] = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: SPReincarnationSuccess,
-			Help: fmt.Sprintf("Total successful NCMD attempts"),
+			Help: "Total successful NCMD attempts",
 		},
 		edgeNodeLabels,
 	)
@@ -467,7 +478,7 @@ func (e *spplugExporter) initializeMetricsAndData() {
 	e.counterMetrics[SPReincarnationDelay] = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: SPReincarnationDelay,
-			Help: fmt.Sprintf("Total delayed NCMD attempts due to connection issues"),
+			Help: "Total delayed NCMD attempts due to connection issues",
 		},
 		edgeNodeLabels,
 	)

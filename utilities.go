@@ -10,6 +10,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/prompb"
 )
 
 // contants for various SP labels and metric names
@@ -20,6 +21,46 @@ const (
 	SPDeviceID   string = "sp_device_id"
 	SPMQTTTopic  string = "sp_mqtt_topic"
 	SPMQTTServer string = "sp_mqtt_server"
+)
+
+var (
+	dataTypeName = map[uint32]string{
+		0:  "Unknown",
+		1:  "Int8",
+		2:  "Int16",
+		3:  "Int32",
+		4:  "Int64",
+		5:  "UInt8",
+		6:  "UInt16",
+		7:  "UInt32",
+		8:  "UInt64",
+		9:  "Float",
+		10: "Double",
+		11: "Boolean",
+		12: "String",
+		13: "DateTime",
+		14: "Text",
+		15: "UUID",
+		16: "DataSet",
+		17: "Bytes",
+		18: "File",
+		19: "Template",
+		20: "PropertySet",
+		21: "PropertySetList",
+		22: "Int8Array",
+		23: "Int16Array",
+		24: "Int32Array",
+		25: "Int64Array",
+		26: "UInt8Array",
+		27: "UInt16Array",
+		28: "UInt32Array",
+		29: "UInt64Array",
+		30: "FloatArray",
+		31: "DoubleArray",
+		32: "BooleanArray",
+		33: "StringArray",
+		34: "DateTimeArray",
+	}
 )
 
 func sendMQTTMsg(c mqtt.Client, pbMsg *pb.Payload,
@@ -106,10 +147,9 @@ func createNewMetric(metricName string, metricLabels []string) *prometheus.Gauge
 
 func prepareLabelsAndValues(topic string) ([]string, prometheus.Labels, bool) {
 	var labels []string
-	t := strings.TrimPrefix(topic, *prefix)
-	t = strings.TrimPrefix(t, "/")
+	t := trimTopicPrefix(topic, *prefix)
 	parts := strings.Split(t, "/")
-	
+
 	// 6.1.3 covers 9 message types, only process device data
 	// Sparkplug puts 5 key namespacing elements in the topic name
 	// these are being parsed and will be added as metric labels
@@ -148,6 +188,11 @@ func prepareLabelsAndValues(topic string) ([]string, prometheus.Labels, bool) {
 	return labels, labelValues, true
 }
 
+func trimTopicPrefix(topic, prefix string) string {
+	t := strings.TrimPrefix(topic, prefix)
+	return strings.TrimPrefix(t, "/")
+}
+
 func getLabelSet() []string {
 	return []string{SPNamespace, SPGroupID, SPEdgeNodeID, SPDeviceID}
 }
@@ -178,6 +223,7 @@ func getNodeLabelSetandValues(namespace string, group string,
 func getNodeLabelSet() []string {
 	return []string{SPNamespace, SPGroupID, SPEdgeNodeID}
 }
+
 // This function acceptys MQTT metric message,
 // extracts out the nested folders(if any), add those folder names in Key value labels
 // and return label value sets, metrics wrt to those labelvalues and error(if any)
@@ -187,7 +233,7 @@ func getMetricName(metric *pb.Payload_Metric) ([]string, string, error) {
 
 	metricName := metric.GetName()
 
-	if strings.Contains(metricName, "/") == true && metricName != "Device Control/Rebirth" {
+	if strings.Contains(metricName, "/") && metricName != "Device Control/Rebirth" {
 		parts := strings.Split(metricName, "/")
 		size := len(parts)
 		metricName = parts[size-1]
@@ -199,7 +245,7 @@ func getMetricName(metric *pb.Payload_Metric) ([]string, string, error) {
 	}
 	metricNameL := model.LabelValue(metricName)
 
-	if model.IsValidMetricName(metricNameL) == true {
+	if model.IsValidMetricName(metricNameL) {
 		errUnexpectedType = nil
 	} else {
 		errUnexpectedType = errors.New("Non-compliant metric name")
@@ -231,7 +277,7 @@ func convertMetricToFloat(metric *pb.Payload_Metric) (float64, error) {
 	case PBUInt32:
 		return float64(metric.GetIntValue()), nil
 	case PBInt64:
-		// This exists because there is an unsigned consersion that
+		// This exists because there is an unsigned conversion that
 		// occurs, so moving it to an int64 allows for the sign to work properly
 		tmpLong := metric.GetLongValue()
 		tmpSigned := int64(tmpLong)
@@ -245,4 +291,20 @@ func convertMetricToFloat(metric *pb.Payload_Metric) (float64, error) {
 	default:
 		return float64(0), errUnexpectedType
 	}
+}
+
+func buildRemoteWriteLabels(extraLabels map[string]string) []prompb.Label {
+	var promLabels []prompb.Label
+
+	// job will be added as a base label for remote write
+	if *jobName != "" {
+		extraLabels["job"] = *jobName
+	}
+
+	for k, v := range extraLabels {
+		label := prompb.Label{Name: k, Value: v}
+		promLabels = append(promLabels, label)
+	}
+
+	return promLabels
 }

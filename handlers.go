@@ -8,7 +8,7 @@ import (
 var connectHandler mqtt.OnConnectHandler = func(client mqtt.Client) {
 	log.Infof("Connected to MQTT\n")
 
-	exporter.client.Subscribe(*topic, 2, exporter.receiveMessage())
+	exporter.client.Subscribe(*topic, 2, exporter.receiveMessage)
 
 	_, labelValues := getServiceLabelSetandValues()
 	exporter.counterMetrics[SPConnectionCount].With(labelValues).Inc()
