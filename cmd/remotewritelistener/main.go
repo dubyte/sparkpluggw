@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/snappy"
@@ -29,23 +30,25 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		log.Printf("error while unmarshalling remote request: %s", err)
 	}
 	for _, ts := range req.Timeseries {
-		//fmt.Printf("Labels: ")
+		var line string
 		for _, l := range ts.GetLabels() {
 			if l.GetName() == "__name__" {
-				fmt.Printf(" %s ", l.GetValue())
+				line += fmt.Sprintf(" %s{", l.GetValue())
 			} else {
-				fmt.Printf(" %s:%s ", l.GetName(), l.GetValue())
+				line += fmt.Sprintf("%s=%s,", l.GetName(), l.GetValue())
 			}
 		}
-		//fmt.Printf("\nSamples: ")
+
+		line = strings.TrimSuffix(line, ",")
+
 		for _, s := range ts.GetSamples() {
-			//fmt.Printf("timestamp:%d value:%f ", s.T(), s.V())
-			fmt.Printf("%.02f", s.V())
+			line += fmt.Sprintf("} %.02f", s.V())
 		}
-		fmt.Println()
+
+		fmt.Println(line)
 	}
 	fmt.Println("--")
-	w.WriteHeader(http.StatusBadRequest)
+	w.WriteHeader(http.StatusOK)
 }
 
 func main() {
