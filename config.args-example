@@ -22,6 +22,7 @@
 --mqtt.prefix=prometheus
 --mqtt.client-id=
 #--mqtt.debug=true
+#--mqtt.conn.retry=true
 --job=sparkpluggw
 --loki.push-URL=http://localhost:3100/loki/api/v1/push
 --loki.batch-wait=5s

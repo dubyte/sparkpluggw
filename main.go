@@ -46,8 +46,9 @@ var (
 		Default("sparkpluggw exporter").String()
 
 	// to pass extra labels --remote-write.extra-label=app=test --remote-write.extra-label=env=development
-	remoteWriteExtraLabels = kingpin.Flag("remote-write.extra-label", "extra label to add").
-				StringMap()
+	remoteWriteExtraLabels = kingpin.Flag("remote-write.extra-label",
+		"extra label to add").
+		StringMap()
 
 	remoteWriteLabelSubstitutions = kingpin.Flag("remote-write.replace-label",
 		"Allows to rename the default labels for remote write").StringMap()
@@ -76,8 +77,13 @@ var (
 		"MQTT client identifier (limit to 23 characters)").
 		Default("").String()
 
-	mqttDebug = kingpin.Flag("mqtt.debug", "Enable MQTT debugging").
-			Default("false").String()
+	mqttDebug = kingpin.Flag("mqtt.debug",
+		"Enable MQTT debugging").
+		Default("false").String()
+
+	mqttConnectWithRetry = kingpin.Flag("mqtt.conn.retry",
+		"When enabled it will try to connect every 10 seconds if the first time was not possible").
+		Default("false").String()
 
 	jobName = kingpin.Flag("job", "the job value used for prometheus remote write and loki").
 		Default("sparkpluggw").String()

@@ -142,13 +142,39 @@ func initSparkPlugExporter(e **spplugExporter, lokiClient promtail.Client) {
 	level.Debug(logger).Log("msg", fmt.Sprint("Initializing Exporter Metrics and Data"))
 	(*e).initializeMetricsAndData()
 
-	if token := (*e).client.Connect(); token.Wait() && token.Error() != nil {
-		level.Error(logger).Log("msg", fmt.Sprintf("%s", token.Error()))
+	if *mqttConnectWithRetry == "true" {
+		connectWithRetry((*e).client, connectMQTT)
+	} else if err := connectMQTT((*e).client); err != nil {
+		level.Error(logger).Log("msg", fmt.Sprintf("%s", err))
 		os.Exit(1)
 	}
 
 	// TODO: is it needed?
 	//(*e).client.Subscribe(*topic, 2, (*e).receiveMessage)
+}
+
+// connectWithRetry try to connect to mqtt and
+func connectWithRetry(c mqtt.Client, connFunc func(c mqtt.Client) error) {
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+	for {
+		err := connFunc(c)
+		if err != nil {
+			level.Error(logger).Log("msg", fmt.Sprintf("%s", err))
+			<-ticker.C
+			continue
+		}
+		break
+	}
+}
+
+func connectMQTT(c mqtt.Client) error {
+	token := c.Connect()
+	token.Wait()
+	if err := token.Error(); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (e *spplugExporter) Describe(ch chan<- *prometheus.Desc) {
@@ -209,7 +235,7 @@ func (e *spplugExporter) receiveMessage(client mqtt.Client, m mqtt.Message) {
 	}
 	topic := m.Topic()
 	level.Debug(logger).Log("msg", fmt.Sprintf("Received message: %s", topic))
-	level.Debug(logger).Log("msg", fmt.Sprintf("%s", pbMsg.String()))
+	level.Debug(logger).Log("msg", pbMsg.String())
 
 	if e.decisionTree != nil {
 		attr := message.Attributes(topic, pbMsg)
