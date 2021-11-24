@@ -97,8 +97,6 @@ func initSparkPlugExporter(e **spplugExporter, lokiClient promtail.Client) {
 	// create a MQTT client
 	options := mqtt.NewClientOptions()
 
-	level.Info(logger).Log("msg", fmt.Sprintf("Connecting to %v", *brokerAddress))
-
 	// Set broker and client options
 	options.AddBroker(*brokerAddress)
 	options.SetClientID(*clientID)
@@ -142,12 +140,11 @@ func initSparkPlugExporter(e **spplugExporter, lokiClient promtail.Client) {
 	level.Debug(logger).Log("msg", fmt.Sprint("Initializing Exporter Metrics and Data"))
 	(*e).initializeMetricsAndData()
 
-	if *mqttConnectWithRetry == "true" {
-		connectWithRetry((*e).client, connectMQTT)
-	} else if err := connectMQTT((*e).client); err != nil {
-		level.Error(logger).Log("msg", fmt.Sprintf("%s", err))
-		os.Exit(1)
-	}
+	// Moved to main after the metrics exists.
+	// if err := connectMQTT((*e).client); err != nil {
+	// 	level.Error(logger).Log("msg", fmt.Sprintf("%s", err))
+	// 	os.Exit(1)
+	// }
 
 	// TODO: is it needed?
 	//(*e).client.Subscribe(*topic, 2, (*e).receiveMessage)
@@ -160,7 +157,6 @@ func connectWithRetry(c mqtt.Client, connFunc func(c mqtt.Client) error) {
 	for {
 		err := connFunc(c)
 		if err != nil {
-			level.Error(logger).Log("msg", fmt.Sprintf("%s", err))
 			<-ticker.C
 			continue
 		}

@@ -174,5 +174,14 @@ func main() {
 		}(&wg)
 	}
 
+	level.Info(logger).Log("msg", fmt.Sprintf("Connecting to %v", *brokerAddress))
+
+	if *mqttConnectWithRetry == "true" {
+		connectWithRetry(exporter.client, connectMQTT)
+	} else if err := connectMQTT(exporter.client); err != nil {
+		level.Error(logger).Log("msg", fmt.Sprintf("%s", err))
+		os.Exit(1)
+	}
+
 	wg.Wait()
 }
