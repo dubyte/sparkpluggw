@@ -21,6 +21,11 @@
 --mqtt.topic=prometheus/#
 --mqtt.prefix=prometheus
 --mqtt.client-id=
+--mqtt.username=
+--mqtt.password=
+--mqtt.crt.file=
+--mqtt.key.file=
+--mqtt.insecure-skip-verify
 #--mqtt.debug=true
 #--mqtt.conn.retry=true
 --job=sparkpluggw

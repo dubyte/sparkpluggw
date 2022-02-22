@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"fmt"
 	oslog "log"
 	"os"
@@ -100,6 +101,27 @@ func initSparkPlugExporter(e **spplugExporter, lokiClient promtail.Client) {
 	// Set broker and client options
 	options.AddBroker(*brokerAddress)
 	options.SetClientID(*clientID)
+
+	if *mqttUsername != "" {
+		options.SetUsername(*mqttUsername)
+	}
+
+	if *mqttPassword != "" {
+		options.SetPassword(*mqttPassword)
+	}
+
+	if *mqttCrtFile != "" && *mqttKeyFile != "" {
+		cer, err := tls.LoadX509KeyPair(*mqttCrtFile, *mqttKeyFile)
+		if err != nil {
+			level.Error(logger).Log("msg", fmt.Sprintf("fail to load tls cert: %s", err))
+		} else {
+			config := &tls.Config{
+				Certificates:       []tls.Certificate{cer},
+				InsecureSkipVerify: *mqttInsecureSkipVerify,
+			}
+			options.SetTLSConfig(config)
+		}
+	}
 
 	// Set client timeouts and intervals
 	options.SetWriteTimeout(5 * time.Second)

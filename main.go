@@ -77,6 +77,22 @@ var (
 		"MQTT client identifier (limit to 23 characters)").
 		Default("").String()
 
+	mqttUsername = kingpin.Flag("mqtt.username",
+		"User to connect MQTT server").Default("").String()
+
+	mqttPassword = kingpin.Flag("mqtt.password",
+		"Password to connect MQTT server").Default("").String()
+
+	mqttCrtFile = kingpin.Flag("mqtt.crt.file",
+		"the path of the tls certificate used to connect to mqtt").Default("").String()
+
+	mqttKeyFile = kingpin.Flag("mqtt.key.file",
+		"the path of the tls key used to connect to mqtt").Default("").String()
+
+	mqttInsecureSkipVerify = kingpin.Flag("mqtt.insecure-skip-verify",
+		"if passed mqtt client will verify the certificate with the ca").
+		Bool()
+
 	mqttDebug = kingpin.Flag("mqtt.debug",
 		"Enable MQTT debugging").
 		Default("false").String()
