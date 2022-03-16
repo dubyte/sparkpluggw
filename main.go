@@ -83,6 +83,9 @@ var (
 	mqttPassword = kingpin.Flag("mqtt.password",
 		"Password to connect MQTT server").Default("").String()
 
+	mqttCACrtFile = kingpin.Flag("mqtt.ca.crt.file",
+		"the path of the extra CA certificate to be used to connect to mqtt").Default("").String()
+
 	mqttCrtFile = kingpin.Flag("mqtt.crt.file",
 		"the path of the tls certificate used to connect to mqtt").Default("").String()
 

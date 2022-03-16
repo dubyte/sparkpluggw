@@ -292,6 +292,11 @@ func convertMetricToFloat(metric *pb.Payload_Metric) (float64, error) {
 		return float64(metric.GetFloatValue()), nil
 	case PBDouble:
 		return float64(metric.GetDoubleValue()), nil
+	case PBBoolean:
+		if metric.GetBooleanValue() {
+			return 1.0, nil
+		}
+		return 0.0, nil
 	default:
 		return float64(0), errUnexpectedType
 	}

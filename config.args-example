@@ -25,6 +25,7 @@
 --mqtt.password=
 --mqtt.crt.file=
 --mqtt.key.file=
+--mqtt.ca.crt.file=
 --mqtt.insecure-skip-verify
 #--mqtt.debug=true
 #--mqtt.conn.retry=true

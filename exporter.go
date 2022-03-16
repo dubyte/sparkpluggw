@@ -2,7 +2,9 @@ package main
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
+	"io/ioutil"
 	oslog "log"
 	"os"
 	"strings"
@@ -110,18 +112,34 @@ func initSparkPlugExporter(e **spplugExporter, lokiClient promtail.Client) {
 		options.SetPassword(*mqttPassword)
 	}
 
+	rootCAs, _ := x509.SystemCertPool()
+	if rootCAs == nil {
+		rootCAs = x509.NewCertPool()
+	}
+
+	if *mqttCACrtFile != "" {
+		certs, _ := ioutil.ReadFile(*mqttCACrtFile)
+		if ok := rootCAs.AppendCertsFromPEM(certs); !ok {
+			level.Info(logger).Log("msg", "No certs appended, using system certs only")
+		}
+	}
+
+	var certs []tls.Certificate
 	if *mqttCrtFile != "" && *mqttKeyFile != "" {
 		cer, err := tls.LoadX509KeyPair(*mqttCrtFile, *mqttKeyFile)
 		if err != nil {
 			level.Error(logger).Log("msg", fmt.Sprintf("fail to load tls cert: %s", err))
-		} else {
-			config := &tls.Config{
-				Certificates:       []tls.Certificate{cer},
-				InsecureSkipVerify: *mqttInsecureSkipVerify,
-			}
-			options.SetTLSConfig(config)
 		}
+		certs = append(certs, cer)
 	}
+
+	config := &tls.Config{
+		RootCAs:            rootCAs,
+		ClientCAs:          rootCAs,
+		Certificates:       certs,
+		InsecureSkipVerify: *mqttInsecureSkipVerify,
+	}
+	options.SetTLSConfig(config)
 
 	// Set client timeouts and intervals
 	options.SetWriteTimeout(5 * time.Second)
