@@ -450,9 +450,44 @@ func (e *spplugExporter) handleEvent(topic string, pbMsg pb.Payload) {
 	if len(topicParts) > positionEdgeNodeID {
 		edgeNodeId = topicParts[positionEdgeNodeID]
 	}
+	event := lokiEvent{
+		Time:       int(pbMsg.GetTimestamp()),
+		Topic:      topic,
+		EventName:  pbMsg.GetMetrics()[0].GetName(),
+		EventValue: eventValue,
+		EventType:  dataTypeName[valueType],
+		EdgeNode:   edgeNodeId,
+	}
+	e.lokiClient.Infof("%s", event)
+}
 
-	e.lokiClient.Infof("time = %d topic = %s event_name = %s event_value = %s event_type = %s, edge_node = %s",
-		pbMsg.GetTimestamp(), topic, pbMsg.GetMetrics()[0].GetName(), eventValue, dataTypeName[valueType], edgeNodeId)
+type lokiEvent struct {
+	Time       int
+	Topic      string
+	EventName  string
+	EventValue string
+	EventType  string
+	EdgeNode   string
+}
+
+func (l lokiEvent) String() string {
+	kv := make([]string, 0, 6)
+	kv = append(kv, fmt.Sprintf("time=%d", l.Time))
+
+	kv = append(kv, ConditionalQuote("topic=%s", l.Topic))
+	kv = append(kv, ConditionalQuote("event_name=%s", l.EventName))
+	kv = append(kv, ConditionalQuote("event_value=%s", l.EventValue))
+	kv = append(kv, ConditionalQuote("event_type=%s", l.EventType))
+	kv = append(kv, ConditionalQuote("edge_node=%s", l.EdgeNode))
+
+	return strings.Join(kv, " ")
+}
+
+func ConditionalQuote(format, value string) string {
+	if strings.Contains(value, " ") {
+		format = strings.Replace(format, "%s", "%q", 1)
+	}
+	return fmt.Sprintf(format, value)
 }
 
 // If the edge node is unique (this is the first time seeing it), then

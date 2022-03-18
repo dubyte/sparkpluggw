@@ -329,7 +329,7 @@ func buildLokiLabels(extraLabels map[string]string) string {
 	}
 
 	for k, v := range extraLabels {
-		l = append(l, fmt.Sprintf(`%s="%s"`, k, v))
+		l = append(l, fmt.Sprintf("%s=%q", k, v))
 	}
 
 	labels += strings.Join(l, ",")
