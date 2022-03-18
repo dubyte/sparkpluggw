@@ -28,7 +28,7 @@ above. Valid levels: [debug, info, warn, error, fatal]
 
 ## Installation
 
-Requires go > 1.9
+Requires go > 1.16
 
 ```
 go get -u github.com/IHI-Energy-Storage/sparkpluggw
@@ -41,7 +41,7 @@ listen to the topics specified by `--mqtt.topic`.
 
 By default, it will listen to `prometheus/#`.
 
-The format for the topics is as follow:
+The format for the topics is as follows:
 
 [Link to 2.1AB specification](https://s3.amazonaws.com/cirrus-link-com/Sparkplug+Topic+Namespace+and+State+ManagementV2.1+Apendix++Payload+B+format.pdf)
 
@@ -56,7 +56,7 @@ The following sections are parsed into the following labels and attached to metr
 - sp_edge_node_id
 - sp_device_id
 
-Currently only numeric metrics are supported.
+Currently, only numeric metrics are supported.
 
 In addition to published metrics, sparkpluggw will also publish two additional metrics per topic where messages have been received.
 

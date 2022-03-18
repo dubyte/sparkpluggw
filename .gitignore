@@ -1,6 +1,9 @@
 vendor
 mqttgateway
 sparkpluggw
+showtree
+decisiontreeplay
+remotewritelistener
 .idea/
 decision-tree.json
 config.args

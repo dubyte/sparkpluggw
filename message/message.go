@@ -7,6 +7,8 @@ import (
 	pb "github.com/IHI-Energy-Storage/sparkpluggw/Sparkplug"
 )
 
+// Attributes take a topic and a payload and extract the attributes
+// which later will be used to
 func Attributes(topic string, payload pb.Payload) map[string]interface{} {
 	attr := make(map[string]interface{})
 	attr["firstMetricIs"] = firstMetric(payload)

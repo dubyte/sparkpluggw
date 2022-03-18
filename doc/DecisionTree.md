@@ -1,12 +1,15 @@
-#decisiontreeplay
+#Decision tree
+sparkpluggww support metrics and events to know what is an event and what is an event it uses a decision tree.
+To use the decision tree it needs the next two:
+- An attribute map (map[string]interface)
+- A decision tree
 
-it is a place to test the decision tree.
-when you run it, you will see the representation of the tree,
-the input and the result after pass the payload to the resolver.
+The library with a decision tree loaded receives the attribute map and return the value of the node where 
+the decision tree was left after evaluate it.
 
 # The library
 The library used for this project is https://github.com/tkanos/go-dtree so all
-the documentation there is valid here. The version is v0.5.0 
+the documentation there is valid here. The version is v0.5.0
 
 # How does it work
 + Define a tree
@@ -14,9 +17,65 @@ the documentation there is valid here. The version is v0.5.0
 + Pass the attributes to the tree resolver
 + get the name of the result node.
 
-## Define a tree
-You need a json file which will be a list of nodes, and except root, they have a parent id which indicates how are
-connected. There are nodes that have `id` and `name` like root, "metric" and "event" in the next example
+# The attribute map
+sparkpluggw receive mqtt messages in the sparkplug format and each message belongs to a topic. Internally in the package
+message there is a function that receives a topic and a sparkplug payload and currently it returns only two attributes:
+
+```go
+func Attributes(topic string, payload pb.Payload) map[string]interface{} {
+    attr := make(map[string]interface{})
+    attr["firstMetricIs"] = firstMetric(payload)
+    attr["metricsLen"] = fmt.Sprintf("%d", len(payload.Metrics))
+return attr
+}
+```
+
+so that means that when we receive a mqtt message with send the topic and the payload to get the attributes map that 
+describe the message, so we can pass to the decision tree, and it can make decisions base on the attributes.
+There are more types supported by the library, but currently we only have string attributes.
+
+## The decision tree
+You need a json file which will be a list of objects:
+- The root node that has only `id` and `name`.
+```json
+  {
+    "id": 1,
+    "name": "root"
+  }
+```
+- Operation nodes (node with id 2) which have an `id`, `parent_id`, `key`, `operator` and `value`. (optional could have an unused name )
+```json
+  {
+    "id": 2,
+    "parent_id": 1,
+    "key": "firstMetricIs",
+    "operator": "eq",
+    "value": "Device Control/Scan Rate ms"
+  }
+```
+the operation node is the one that is takes the attribute map and will compare the key `firstMetricIs` with the attribute map
+and if it is equal (`eq`) to `Device Control/Scan Rate ms` it will evaluate true and it will continue in this path.
+
+- A leaf node (like node with id 4) which have `id`, `parent_id`, `name`
+```json
+  {
+    "id": 4,
+    "parent_id": 2,
+    "Name": "metric"
+  }
+```
+This is like an exit node if the decision tree ends in this node it returns `name` and in sparkpluggw it is used to 
+classify the message as `metric`
+
+- A fallback node `id`, `parent_id`, `value`
+```json
+  {
+    "id": 3,
+    "parent_id": 1,
+    "value": "fallback"
+  }
+```
+This fallback works like and "else" if the condition in the other nodes does not evaluate true it will go in this path.
 
 ```json
 [
@@ -65,9 +124,13 @@ Representation
                    │metric│                                         │event│                    
                    ╰──────╯                                         ╰─────╯         
 ```
-And there are others that have `key`, `operator` and `value`. They could have a name which it don't impact in the 
-tree's resolution but in the string representation is mask the key operator value label in the representation which is
-only used to visualize the tree like in this example:
+
+## Examples
+
+### Use name in operand nodes
+In the next example if the operand have a name the printed representation only show the name. So you could be used
+to make user user-friendly annotations instead of operations.
+
 ```json
 [
   {
@@ -116,6 +179,8 @@ Representation:
              │metric│                               │event│                
              ╰──────╯                               ╰─────╯  
 ```
+
+### Fallback nodes
 Also, you can use a fallback as value, so in case the conditions is not meet it can go the fallback like:
 
 ```json
@@ -163,31 +228,8 @@ Representation:
                    ╰──────╯                       ╰─────╯ 
 ```
 
-## Get the attributes of the payload
-The operation nodes work with a key, operator and a value. The operator and the value are only especify in the tree.
-So to know the list of operations and how the works click [here](https://github.com/tkanos/go-dtree#available-operators-)
-
-The key is a different because not any key works. In this project there is package called `message` which is the one
-that define what keys can be used. So in the function Attributes it receives the topic and payload so to add a new attribute
-you will need to implement it there.
-
-```go
-func Attributes(topic string, payload pb.Payload) map[string]interface{} {
-	attr := make(map[string]interface{})
-	attr["firstMetricIs"] = firstMetric(payload)
-	return attr
-}
-```
-As an example lets implement number of metrics like this:
-```go
-func Attributes(topic string, payload pb.Payload) map[string]interface{} {
-	attr := make(map[string]interface{})
-	attr["firstMetricIs"] = firstMetric(payload)
-	attr["metricsLen"] = fmt.Sprintf("%d", len(payload.Metrics))
-	return attr
-}
-```
-So in this case now I can use the key metricsLen like this:
+### A decision tree and a payload example to show the result
+The next example use firstMetricIs and metricsLen to make a decision tree 
 ```json
 [
   {
@@ -255,8 +297,12 @@ representation:
              ╰─────╯       ╰──────╯    
 ```
 
-## Get the name of the result node
-decisiontreeplay output look like this:
+## Commands
+### decisiontreeplay
+decision tree play is a code in sparkploggw that load a decision tree and has a event example payload and a metric payload
+running the command allow you to see your decision tree and the payload in consideration and it will print the outcome
+
+In the next example the tree ends in `metric` using the next topic and payload 
 ```
 tree:
                           ╭────╮                           
@@ -304,3 +350,6 @@ representation:
 Basically is there to help you test your decision tree. Notice that at the end you have a result which have a name.
 and a representation, if the result is not printed or the representation is not a leave node that means your tree has
 some issue, and you need to check it.
+
+### treeshow
+treeshow it only receives a json as parameter and if all is ok it will print three representation.
