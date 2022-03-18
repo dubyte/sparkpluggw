@@ -1,4 +1,4 @@
-#Decision tree
+# Decision tree
 sparkpluggww support metrics and events to know what is an event and what is an event it uses a decision tree.
 To use the decision tree it needs the next two:
 - An attribute map (map[string]interface)
@@ -7,17 +7,17 @@ To use the decision tree it needs the next two:
 The library with a decision tree loaded receives the attribute map and return the value of the node where 
 the decision tree was left after evaluate it.
 
-# The library
+## The library
 The library used for this project is https://github.com/tkanos/go-dtree so all
 the documentation there is valid here. The version is v0.5.0
 
-# How does it work
+## How does it work
 + Define a tree
 + Get the attributes of the payload
 + Pass the attributes to the tree resolver
 + get the name of the result node.
 
-# The attribute map
+## The attribute map
 sparkpluggw receive mqtt messages in the sparkplug format and each message belongs to a topic. Internally in the package
 message there is a function that receives a topic and a sparkplug payload and currently it returns only two attributes:
 
@@ -34,7 +34,7 @@ so that means that when we receive a mqtt message with send the topic and the pa
 describe the message, so we can pass to the decision tree, and it can make decisions base on the attributes.
 There are more types supported by the library, but currently we only have string attributes.
 
-## The decision tree
+### The decision tree
 You need a json file which will be a list of objects:
 - The root node that has only `id` and `name`.
 ```json
@@ -125,9 +125,9 @@ Representation
                    ╰──────╯                                         ╰─────╯         
 ```
 
-## Examples
+### Examples
 
-### Use name in operand nodes
+#### Use name in operand nodes
 In the next example if the operand have a name the printed representation only show the name. So you could be used
 to make user user-friendly annotations instead of operations.
 
@@ -180,7 +180,7 @@ Representation:
              ╰──────╯                               ╰─────╯  
 ```
 
-### Fallback nodes
+#### Fallback nodes
 Also, you can use a fallback as value, so in case the conditions is not meet it can go the fallback like:
 
 ```json
@@ -228,7 +228,7 @@ Representation:
                    ╰──────╯                       ╰─────╯ 
 ```
 
-### A decision tree and a payload example to show the result
+#### A decision tree and a payload example to show the result
 The next example use firstMetricIs and metricsLen to make a decision tree 
 ```json
 [
@@ -297,8 +297,8 @@ representation:
              ╰─────╯       ╰──────╯    
 ```
 
-## Commands
-### decisiontreeplay
+### Commands
+#### decisiontreeplay
 decision tree play is a code in sparkploggw that load a decision tree and has a event example payload and a metric payload
 running the command allow you to see your decision tree and the payload in consideration and it will print the outcome
 
@@ -351,5 +351,5 @@ Basically is there to help you test your decision tree. Notice that at the end y
 and a representation, if the result is not printed or the representation is not a leave node that means your tree has
 some issue, and you need to check it.
 
-### treeshow
+#### treeshow
 treeshow it only receives a json as parameter and if all is ok it will print three representation.
