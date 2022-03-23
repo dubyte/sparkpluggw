@@ -26,6 +26,7 @@ type Writer struct {
 	Gatherer           prometheus.Gatherer
 	ExtraLabels        []prompb.Label
 	LabelSubstitutions map[string]string
+	DropLabels         map[string]struct{}
 }
 
 //Write get the metrics from the gatherer using the current time it creates a remote write request
@@ -33,7 +34,7 @@ type Writer struct {
 func (w Writer) Write() {
 	timestamp := time.Now().UnixNano() / int64(time.Millisecond)
 
-	req, err := WriteRequest(w.Gatherer, timestamp, w.LabelSubstitutions, w.ExtraLabels...)
+	req, err := WriteRequest(w.Gatherer, timestamp, w.LabelSubstitutions, w.ExtraLabels, w.DropLabels)
 	if err != nil {
 		level.Error(w.Logger).Log("msg", fmt.Sprintf("error while building remote write request: %s", err))
 		return
@@ -93,7 +94,7 @@ func ClientFromConfig(cfg remote.ClientConfig, userAgent string) (remote.WriteCl
 
 //WriteRequest get the metric families from the gatherer using passed timestamp in unix miliseconds time and returns
 // a remoteWrite request
-func WriteRequest(g prometheus.Gatherer, timeStamp int64, labelSubstitutions map[string]string, extraLabels ...prompb.Label) (prompb.WriteRequest, error) {
+func WriteRequest(g prometheus.Gatherer, timeStamp int64, labelSubstitutions map[string]string, extraLabels []prompb.Label, dropLabels map[string]struct{}) (prompb.WriteRequest, error) {
 	var req prompb.WriteRequest
 
 	mfs, err := g.Gather()
@@ -106,7 +107,7 @@ func WriteRequest(g prometheus.Gatherer, timeStamp int64, labelSubstitutions map
 		for _, metric := range mf.GetMetric() {
 
 			//TODO get the instance from config
-			commonLabels := prometheusTSLabels(metric, extraLabels, labelSubstitutions)
+			commonLabels := prometheusTSLabels(metric, extraLabels, labelSubstitutions, dropLabels)
 
 			switch mf.GetType() {
 
@@ -239,10 +240,13 @@ func prometheusTS(timeStamp int64, metricName string, value float64, labels []pr
 }
 
 // prometheusTSLabels converts the labels from a metric family for one that can be use in the remote request.
-func prometheusTSLabels(m *dto.Metric, extra []prompb.Label, labelSubstitutions map[string]string) []prompb.Label {
+func prometheusTSLabels(m *dto.Metric, extra []prompb.Label, labelSubstitutions map[string]string, dropLabels map[string]struct{}) []prompb.Label {
 	var labels []prompb.Label
 
 	for _, mLabel := range m.GetLabel() {
+		if _, ok := dropLabels[mLabel.GetName()]; ok {
+			continue
+		}
 		var l prompb.Label
 		l.Name = labelName(mLabel.GetName(), labelSubstitutions)
 		l.Value = mLabel.GetValue()
@@ -250,6 +254,9 @@ func prometheusTSLabels(m *dto.Metric, extra []prompb.Label, labelSubstitutions 
 	}
 
 	for _, e := range extra {
+		if _, ok := dropLabels[e.GetName()]; ok {
+			continue
+		}
 		var l prompb.Label
 		l.Name = labelName(e.GetName(), labelSubstitutions)
 		l.Value = e.GetValue()

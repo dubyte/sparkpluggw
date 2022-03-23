@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/IHI-Energy-Storage/sparkpluggw/remotewrite"
-	"github.com/afiskon/promtail-client/promtail"
+	"github.com/dubyte/promtail-client/promtail"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
@@ -47,11 +47,13 @@ var (
 
 	// to pass extra labels --remote-write.extra-label=app=test --remote-write.extra-label=env=development
 	remoteWriteExtraLabels = kingpin.Flag("remote-write.extra-label",
-		"extra label to add").
-		StringMap()
+		"extra label to add ( example --remote-write.extra-label=labelName=labelValue)").StringMap()
 
 	remoteWriteLabelSubstitutions = kingpin.Flag("remote-write.replace-label",
-		"Allows to rename the default labels for remote write").StringMap()
+		"Allows to rename the default labels for remote write (for example --remote-write.replace-label=sp_namespace=ns will replace sp_namespace for ns)").StringMap()
+
+	remoteWriteDropLabels = kingpin.Flag("remote-write.drop-label",
+		"remove to not send a label for remote write (repeat to remove more than one field)").Strings()
 
 	remoteWriteTimeout = kingpin.Flag("remote-write.timeout",
 		"Sets the timeout when sending request to prometheus remote write").
@@ -96,9 +98,8 @@ var (
 		"if passed mqtt client will verify the certificate with the ca").
 		Bool()
 
-	mqttDebug = kingpin.Flag("mqtt.debug",
-		"Enable MQTT debugging").
-		Default("false").String()
+	mqttDebug = kingpin.Flag("mqtt.debug", "Enable MQTT debugging").
+			Default("false").String()
 
 	mqttConnectWithRetry = kingpin.Flag("mqtt.conn.retry",
 		"When enabled it will try to connect every 10 seconds if the first time was not possible").
@@ -112,20 +113,33 @@ var (
 		Default("http://localhost:3100/loki/api/v1/push").String()
 
 	// it allows passing labels like: --loki.extra-label env=production --loki.extra-label datacenter=us-west
-	lokiExtraLabels = kingpin.Flag("loki.extra-label", "Label to send to loki").
-			StringMap()
+	lokiExtraLabels = kingpin.Flag("loki.extra-label",
+		"Label to send to loki (example --loki.extra-label=datacenter=us-west)").StringMap()
 
 	lokiBatchWait = kingpin.Flag("loki.batch-wait",
 		"Maximum amount of time to wait before sending a batch, even if that batch isn't full.").
 		Default("5s").Duration()
 
+	lokiFieldSubstitutions = kingpin.Flag("loki.replace-field",
+		"Allows to rename the default fields for loki for example --loki.replace-field=sp_namespace=ns will replace sp_namespace for ns").StringMap()
+
 	decisionTreePath = kingpin.Flag("decision-tree.file", "path to file with a decision tree defined in json").
-				Default("").String()
+				String()
+
+	lokiDropFields = kingpin.Flag("loki.drop-field", "field will not be send to loki. (example --loki.drop-field=event_name --loki.drop-field=event_type)").
+			Default("").
+			Strings()
 
 	progname = "sparkpluggw"
 	exporter *spplugExporter
 	logger   log.Logger
 )
+
+// lokiFields used to know valid fields that can be replaced for loki
+var lokiFields = map[string]struct{}{"topic": {}, "event_name": {}, "event_value": {}, "event_type": {}, "edge_node": {}}
+
+// dropFields used to know if we drop the field or not
+var dropFields = make(map[string]struct{})
 
 func main() {
 	kingpin.CommandLine.HelpFlag.Short('h')
@@ -135,6 +149,17 @@ func main() {
 
 	logger = promlog.New(&promlogConfig)
 
+	for k := range *lokiFieldSubstitutions {
+		if _, ok := lokiFields[k]; !ok {
+			level.Warn(logger).Log("msg", fmt.Sprintf("'%s' is not a valid loki field to replace", k))
+			delete(*lokiFieldSubstitutions, k)
+		}
+	}
+
+	for _, v := range *lokiDropFields {
+		dropFields[v] = struct{}{}
+	}
+
 	conf := promtail.ClientConfig{
 		PushURL:            *pushURL,
 		Labels:             buildLokiLabels(*lokiExtraLabels),
@@ -142,6 +167,7 @@ func main() {
 		BatchEntriesNumber: 10000,
 		SendLevel:          promtail.INFO,
 		PrintLevel:         promtail.ERROR,
+		PrefixFormat:       "level=%s ",
 	}
 	lokiClient, err := promtail.NewClientProto(conf)
 	if err != nil {
@@ -178,9 +204,13 @@ func main() {
 			level.Error(logger).Log("msg", err)
 			os.Exit(1)
 		}
-
+		dropLabels := make(map[string]struct{})
+		for _, l := range *remoteWriteDropLabels {
+			dropLabels[l] = struct{}{}
+		}
 		w := remotewrite.Writer{Client: c, Logger: logger, Gatherer: prometheus.DefaultGatherer,
 			ExtraLabels: buildRemoteWriteLabels(*remoteWriteExtraLabels), LabelSubstitutions: *remoteWriteLabelSubstitutions,
+			DropLabels: dropLabels,
 		}
 
 		wg.Add(1)

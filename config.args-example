@@ -8,15 +8,20 @@
 #--remote-write.endpoint=http://localhost:9090/api/v1/write
 #--remote-write.user-agent=sparkpluggw exporter
 # remote-write.extra-label can be repeated to add more replacements
-# --remote-write.extra-label env=development
-# --remote-write.extra-label server=fancy
-# remote-write.replace-label can be repeated to add more replacements
-# --remote-write.replace-label sp_namespace=namespace
-# --remote-write.replace-label sp_group_id=group
-# loki.extra-label can be repeated to add more labels but in loki less labels is better.
+#--remote-write.extra-label=env=development
+#--remote-write.extra-label=server=fancy
+#--remote-write.replace-label can be repeated to add more replacements
+#--remote-write.drop-label=sp_group_id
+#--remote-write.drop-label=sp_edge_node_id
+#--remote-write.drop-label sp_group_id
+#--loki.extra-label can be repeated to add more labels but in loki less labels is better.
 #--loki.extra-label vil=very-important-label
-# --remote-write.timeout=30s
-# --remote-write.send-every=30s
+#--loki.replace-field=sp_namespace=namespace
+#--loki.drop-field can be repeated to add more
+#--loki.drop-field=topic
+#--loki.drop-field=event_name
+#--remote-write.timeout=30s
+#--remote-write.send-every=30s
 --mqtt.broker-address=tcp://localhost:1883
 --mqtt.topic=prometheus/#
 --mqtt.prefix=prometheus

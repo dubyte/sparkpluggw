@@ -13,7 +13,7 @@ import (
 
 	pb "github.com/IHI-Energy-Storage/sparkpluggw/Sparkplug"
 	"github.com/IHI-Energy-Storage/sparkpluggw/message"
-	"github.com/afiskon/promtail-client/promtail"
+	"github.com/dubyte/promtail-client/promtail"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/go-kit/log/level"
 	"github.com/golang/protobuf/proto" //nolint
@@ -450,6 +450,7 @@ func (e *spplugExporter) handleEvent(topic string, pbMsg pb.Payload) {
 	if len(topicParts) > positionEdgeNodeID {
 		edgeNodeId = topicParts[positionEdgeNodeID]
 	}
+
 	event := lokiEvent{
 		Time:       int(pbMsg.GetTimestamp()),
 		Topic:      topic,
@@ -457,8 +458,15 @@ func (e *spplugExporter) handleEvent(topic string, pbMsg pb.Payload) {
 		EventValue: eventValue,
 		EventType:  dataTypeName[valueType],
 		EdgeNode:   edgeNodeId,
+		dropFields: dropFields,
 	}
-	e.lokiClient.Infof("%s", event)
+
+	l := fmt.Sprintf("%s", event)
+	for k, v := range *lokiFieldSubstitutions {
+		l = strings.Replace(l, k, v, 1)
+	}
+
+	e.lokiClient.Infof(l)
 }
 
 type lokiEvent struct {
@@ -468,17 +476,30 @@ type lokiEvent struct {
 	EventValue string
 	EventType  string
 	EdgeNode   string
+	dropFields map[string]struct{}
 }
 
 func (l lokiEvent) String() string {
 	kv := make([]string, 0, 6)
-	kv = append(kv, fmt.Sprintf("time=%d", l.Time))
 
-	kv = append(kv, ConditionalQuote("topic=%s", l.Topic))
-	kv = append(kv, ConditionalQuote("event_name=%s", l.EventName))
-	kv = append(kv, ConditionalQuote("event_value=%s", l.EventValue))
-	kv = append(kv, ConditionalQuote("event_type=%s", l.EventType))
-	kv = append(kv, ConditionalQuote("edge_node=%s", l.EdgeNode))
+	if _, ok := l.dropFields["time"]; !ok {
+		kv = append(kv, fmt.Sprintf("time=%d", l.Time))
+	}
+	if _, ok := l.dropFields["topic"]; !ok {
+		kv = append(kv, ConditionalQuote("topic=%s", l.Topic))
+	}
+	if _, ok := l.dropFields["event_name"]; !ok {
+		kv = append(kv, ConditionalQuote("event_name=%s", l.EventName))
+	}
+	if _, ok := l.dropFields["event_value"]; !ok {
+		kv = append(kv, ConditionalQuote("event_value=%s", l.EventValue))
+	}
+	if _, ok := l.dropFields["event_type"]; !ok {
+		kv = append(kv, ConditionalQuote("event_type=%s", l.EventType))
+	}
+	if _, ok := l.dropFields["edge_node"]; !ok {
+		kv = append(kv, ConditionalQuote("edge_node=%s", l.EdgeNode))
+	}
 
 	return strings.Join(kv, " ")
 }
