@@ -40,3 +40,4 @@
 --decision-tree.file=decision-tree-example.json
 --log.level=info
 --log.format=logfmt
+--edge-node.prefix=33333-

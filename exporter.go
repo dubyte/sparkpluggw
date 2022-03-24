@@ -270,6 +270,8 @@ func (e *spplugExporter) receiveMessage(client mqtt.Client, m mqtt.Message) {
 		return
 	}
 	topic := m.Topic()
+	topic = strings.Replace(topic, *edgNodePrefix, "", 1)
+
 	level.Debug(logger).Log("msg", fmt.Sprintf("Received message: %s", topic))
 	level.Debug(logger).Log("msg", pbMsg.String())
 

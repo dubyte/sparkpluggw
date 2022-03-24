@@ -127,8 +127,10 @@ var (
 				String()
 
 	lokiDropFields = kingpin.Flag("loki.drop-field", "field will not be send to loki. (example --loki.drop-field=event_name --loki.drop-field=event_type)").
-			Default("").
 			Strings()
+
+	edgNodePrefix = kingpin.Flag("edge-node.prefix", "if given it removes the prefix from the edge_node_id").
+			Default("").String()
 
 	progname = "sparkpluggw"
 	exporter *spplugExporter
