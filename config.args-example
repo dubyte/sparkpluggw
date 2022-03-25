@@ -39,6 +39,6 @@
 --loki.batch-wait=5s
 --decision-tree.file=decision-tree-example.json
 --log.level=info
---log.format=logfmt
+--log.format=logger:stdout?json=false
 --edge-node.prefix=33333-
 --lokiEnabled

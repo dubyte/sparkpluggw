@@ -5,7 +5,6 @@ go 1.18
 require (
 	github.com/dubyte/promtail-client v0.0.1
 	github.com/eclipse/paho.mqtt.golang v1.3.5
-	github.com/go-kit/log v0.1.0
 	github.com/gogo/protobuf v1.3.2
 	github.com/golang/protobuf v1.5.2
 	github.com/golang/snappy v0.0.4
@@ -26,6 +25,7 @@ require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/dennwc/varint v1.0.0 // indirect
+	github.com/go-kit/log v0.1.0 // indirect
 	github.com/go-logfmt/logfmt v0.5.1 // indirect
 	github.com/gorilla/websocket v1.4.2 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
