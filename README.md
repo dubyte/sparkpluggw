@@ -15,6 +15,7 @@ Flags:
                                  Path under which to expose metrics
       --web.disable-telemetry    if this flag is passed the app won't server the metrics endpoint
       --remote-write.enabled     if passed exporter will send metrics to a remote prometheus
+      --loki.enabled             if passed some messages could be sent to loki instead of store them as metrics using a decision tree
       --remote-write.endpoint=http://localhost:9090/api/v1/write  
                                  the endpoint where prometheus is listen for remote write requests
       --remote-write.user-agent="sparkpluggw exporter"  
@@ -22,8 +23,7 @@ Flags:
       --remote-write.extra-label=REMOTE-WRITE.EXTRA-LABEL ...  
                                  extra label to add ( example --remote-write.extra-label=labelName=labelValue)
       --remote-write.replace-label=REMOTE-WRITE.REPLACE-LABEL ...  
-                                 Allows to rename the default labels for remote write (for example --remote-write.replace-label=sp_namespace=ns
-                                 will replace sp_namespace for ns)
+                                 Allows to rename the default labels for remote write (for example --remote-write.replace-label=sp_namespace=ns will replace sp_namespace for ns)
       --remote-write.drop-label=REMOTE-WRITE.DROP-LABEL ...  
                                  remove to not send a label for remote write (repeat to remove more than one field)
       --remote-write.timeout=30s  
@@ -53,15 +53,15 @@ Flags:
                                  Label to send to loki (example --loki.extra-label=datacenter=us-west)
       --loki.batch-wait=5s       Maximum amount of time to wait before sending a batch, even if that batch isn't full.
       --loki.replace-field=LOKI.REPLACE-FIELD ...  
-                                 Allows to rename the default fields for loki for example --loki.replace-field=sp_namespace=ns will replace
-                                 sp_namespace for ns
+                                 Allows to rename the default fields for loki for example --loki.replace-field=sp_namespace=ns will replace sp_namespace for ns
       --decision-tree.file=DECISION-TREE.FILE  
                                  path to file with a decision tree defined in json
       --loki.drop-field=LOKI.DROP-FIELD ...  
                                  field will not be send to loki. (example --loki.drop-field=event_name --loki.drop-field=event_type)
       --edge-node.prefix=""      if given it removes the prefix from the edge_node_id
-      --log.level=info           Only log messages with the given severity or above. One of: [debug, info, warn, error]
-      --log.format=logfmt        Output format of log messages. One of: [logfmt, json]
+      --log.level="info"         Only log messages with the given severity or above. Valid levels: [debug, info, warn, error, fatal]
+      --log.format="logger:stderr"  
+                                 Set the log target and format. Example: "logger:syslog?appname=bob&local=7" or "logger:stdout?json=true"
 ```
 
 ## Installation
