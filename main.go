@@ -37,6 +37,10 @@ var (
 		"if passed exporter will send metrics to a remote prometheus").
 		Bool()
 
+	lokiEnabled = kingpin.Flag("loki.enabled",
+		"if passed some messages could be sent to loki instead of store them as metrics using a decision tree").
+		Bool()
+
 	remoteWriteEndpoint = kingpin.Flag("remote-write.endpoint",
 		"the endpoint where prometheus is listen for remote write requests").
 		Default("http://localhost:9090/api/v1/write").URL()
@@ -151,32 +155,36 @@ func main() {
 
 	logger = promlog.New(&promlogConfig)
 
-	for k := range *lokiFieldSubstitutions {
-		if _, ok := lokiFields[k]; !ok {
-			level.Warn(logger).Log("msg", fmt.Sprintf("'%s' is not a valid loki field to replace", k))
-			delete(*lokiFieldSubstitutions, k)
+	var lokiClient promtail.Client
+	if *lokiEnabled {
+		for k := range *lokiFieldSubstitutions {
+			if _, ok := lokiFields[k]; !ok {
+				level.Warn(logger).Log("msg", fmt.Sprintf("'%s' is not a valid loki field to replace", k))
+				delete(*lokiFieldSubstitutions, k)
+			}
 		}
-	}
 
-	for _, v := range *lokiDropFields {
-		dropFields[v] = struct{}{}
-	}
+		for _, v := range *lokiDropFields {
+			dropFields[v] = struct{}{}
+		}
 
-	conf := promtail.ClientConfig{
-		PushURL:            *pushURL,
-		Labels:             buildLokiLabels(*lokiExtraLabels),
-		BatchWait:          *lokiBatchWait,
-		BatchEntriesNumber: 10000,
-		SendLevel:          promtail.INFO,
-		PrintLevel:         promtail.ERROR,
-		PrefixFormat:       "level=%s ",
+		conf := promtail.ClientConfig{
+			PushURL:            *pushURL,
+			Labels:             buildLokiLabels(*lokiExtraLabels),
+			BatchWait:          *lokiBatchWait,
+			BatchEntriesNumber: 10000,
+			SendLevel:          promtail.INFO,
+			PrintLevel:         promtail.ERROR,
+			PrefixFormat:       "level=%s ",
+		}
+		var err error
+		lokiClient, err = promtail.NewClientProto(conf)
+		if err != nil {
+			level.Error(logger).Log("msg", err)
+			os.Exit(1)
+		}
+		defer lokiClient.Shutdown()
 	}
-	lokiClient, err := promtail.NewClientProto(conf)
-	if err != nil {
-		level.Error(logger).Log("msg", err)
-		os.Exit(1)
-	}
-	defer lokiClient.Shutdown()
 
 	initSparkPlugExporter(&exporter, lokiClient)
 	prometheus.MustRegister(exporter)

@@ -167,16 +167,17 @@ func initSparkPlugExporter(e **spplugExporter, lokiClient promtail.Client) {
 
 	(*e).client = mqtt.NewClient(options)
 
-	level.Debug(logger).Log("msg", "Initializing Exporter decision tree")
+	if lokiClient != nil {
+		level.Debug(logger).Log("msg", "Initializing Exporter decision tree")
 
-	dt, err := loadDecisionTree(*decisionTreePath)
-	if err != nil {
-		level.Info(logger).Log("msg", fmt.Sprintf("decision tree load failed: %s", err))
-		level.Info(logger).Log("mgs", "all messages are going to be handled by metrics handler.")
-	} else {
-		(*e).decisionTree = dt
+		dt, err := loadDecisionTree(*decisionTreePath)
+		if err != nil {
+			level.Info(logger).Log("msg", fmt.Sprintf("decision tree load failed: %s", err))
+			level.Info(logger).Log("mgs", "all messages are going to be handled by metrics handler.")
+		} else {
+			(*e).decisionTree = dt
+		}
 	}
-
 	level.Debug(logger).Log("msg", fmt.Sprint("Initializing Exporter Metrics and Data"))
 	(*e).initializeMetricsAndData()
 
