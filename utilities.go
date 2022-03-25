@@ -6,12 +6,13 @@ import (
 	"os"
 	"strings"
 
+	"github.com/IHI-Energy-Storage/sparkpluggw/log"
+
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/tkanos/go-dtree"
 
 	pb "github.com/IHI-Energy-Storage/sparkpluggw/Sparkplug"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
-	"github.com/go-kit/log/level"
 	"github.com/golang/protobuf/proto" //nolint
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -73,13 +74,13 @@ func sendMQTTMsg(c mqtt.Client, pbMsg *pb.Payload,
 	msg, err := proto.Marshal(pbMsg)
 
 	if err != nil {
-		level.Warn(logger).Log("msg", fmt.Sprintf("Failed to Marshall: %s", err))
+		log.Warnf("Failed to Marshall: %s", err)
 		return false
 	}
 
 	token := c.Publish(topic, 0, false, msg)
 	token.Wait()
-	level.Debug(logger).Log("msg", fmt.Sprintf("%s", pbMsg.String()))
+	log.Debugf("%s", pbMsg.String())
 
 	return true
 }
@@ -160,11 +161,11 @@ func prepareLabelsAndValues(topic string) ([]string, prometheus.Labels, bool) {
 
 	if (parts[2] == "DDATA") || (parts[2] == "DBIRTH") {
 		if len(parts) != 5 {
-			level.Debug(logger).Log("msg", fmt.Sprintf("Ignoring topic %s, does not comply with Sparkspec", t))
+			log.Debugf("Ignoring topic %s, does not comply with Sparkspec", t)
 			return nil, nil, false
 		}
 	} else {
-		level.Debug(logger).Log("msg", fmt.Sprintf("Ignoring non-device metric data: %s", parts[2]))
+		log.Debugf("Ignoring non-device metric data: %s", parts[2])
 		return nil, nil, false
 	}
 
@@ -245,7 +246,8 @@ func getMetricName(metric *pb.Payload_Metric) ([]string, string, error) {
 			labelvalues = append(labelvalues, parts[metlen])
 
 		}
-		level.Debug(logger).Log("msg", fmt.Sprintf("Received message for labelvalues: %s", labelvalues))
+		log.Debugf("Received message for labelvalues: %s", labelvalues)
+
 	}
 	metricNameL := model.LabelValue(metricName)
 

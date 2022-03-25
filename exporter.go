@@ -12,10 +12,10 @@ import (
 	"time"
 
 	pb "github.com/IHI-Energy-Storage/sparkpluggw/Sparkplug"
+	"github.com/IHI-Energy-Storage/sparkpluggw/log"
 	"github.com/IHI-Energy-Storage/sparkpluggw/message"
 	"github.com/dubyte/promtail-client/promtail"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
-	"github.com/go-kit/log/level"
 	"github.com/golang/protobuf/proto" //nolint
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/tkanos/go-dtree"
@@ -120,7 +120,7 @@ func initSparkPlugExporter(e **spplugExporter, lokiClient promtail.Client) {
 	if *mqttCACrtFile != "" {
 		certs, _ := ioutil.ReadFile(*mqttCACrtFile)
 		if ok := rootCAs.AppendCertsFromPEM(certs); !ok {
-			level.Info(logger).Log("msg", "No certs appended, using system certs only")
+			log.Info("No certs appended, using system certs only")
 		}
 	}
 
@@ -128,7 +128,7 @@ func initSparkPlugExporter(e **spplugExporter, lokiClient promtail.Client) {
 	if *mqttCrtFile != "" && *mqttKeyFile != "" {
 		cer, err := tls.LoadX509KeyPair(*mqttCrtFile, *mqttKeyFile)
 		if err != nil {
-			level.Error(logger).Log("msg", fmt.Sprintf("fail to load tls cert: %s", err))
+			log.Errorf("fail to load tls cert: %s", err)
 		}
 		certs = append(certs, cer)
 	}
@@ -168,24 +168,24 @@ func initSparkPlugExporter(e **spplugExporter, lokiClient promtail.Client) {
 	(*e).client = mqtt.NewClient(options)
 
 	if lokiClient != nil {
-		level.Debug(logger).Log("msg", "Initializing Exporter decision tree")
+		log.Debug("Initializing Exporter decision tree")
 
 		dt, err := loadDecisionTree(*decisionTreePath)
 		if err != nil {
-			level.Info(logger).Log("msg", fmt.Sprintf("decision tree load failed: %s", err))
-			level.Info(logger).Log("mgs", "all messages are going to be handled by metrics handler.")
+			log.Infof("decision tree load failed: %s", err)
+			log.Info("all messages are going to be handled by metrics handler.")
 		} else {
 			(*e).decisionTree = dt
 		}
 	}
-	level.Debug(logger).Log("msg", fmt.Sprint("Initializing Exporter Metrics and Data"))
+	log.Debug("Initializing Exporter Metrics and Data")
 	(*e).initializeMetricsAndData()
 
 	// Moved to main after the metrics exists.
-	// if err := connectMQTT((*e).client); err != nil {
-	// 	level.Error(logger).Log("msg", fmt.Sprintf("%s", err))
-	// 	os.Exit(1)
-	// }
+	//if err := connectMQTT((*e).client); err != nil {
+	//	log.Error("%s", err)
+	//	os.Exit(1)
+	//}
 
 	// TODO: is it needed?
 	//(*e).client.Subscribe(*topic, 2, (*e).receiveMessage)
@@ -267,20 +267,20 @@ func (e *spplugExporter) receiveMessage(client mqtt.Client, m mqtt.Message) {
 
 	// Unmarshal MQTT message into Google Protocol Buffer
 	if err := proto.Unmarshal(m.Payload(), &pbMsg); err != nil {
-		level.Error(logger).Log("msg", fmt.Sprintf("Error decoding GPB, message: %v", err))
+		log.Errorf("Error decoding GPB, message: %v", err)
 		return
 	}
 	topic := m.Topic()
 	topic = strings.Replace(topic, *edgNodePrefix, "", 1)
 
-	level.Debug(logger).Log("msg", fmt.Sprintf("Received message: %s", topic))
-	level.Debug(logger).Log("msg", pbMsg.String())
+	log.Debugf("Received message: %s", topic)
+	log.Debug(pbMsg.String())
 
 	if e.decisionTree != nil {
 		attr := message.Attributes(topic, pbMsg)
 		node, err := e.decisionTree.Resolve(attr)
 		if err != nil {
-			level.Error(logger).Log("msg", fmt.Sprintf("messageRouter error: %v", err))
+			log.Errorf("messageRouter error: %v", err)
 			return
 		}
 
@@ -314,7 +314,7 @@ func (e *spplugExporter) handleMetric(c mqtt.Client, topic string, pbMsg pb.Payl
 		siteLabelValues[SPEdgeNodeID])
 
 	metricList := pbMsg.GetMetrics()
-	level.Debug(logger).Log("msg", fmt.Sprintf("Received message in processMetric: %s", metricList))
+	log.Debugf("Received message in processMetric: %s", metricList)
 
 	for _, metric := range metricList {
 
@@ -325,7 +325,7 @@ func (e *spplugExporter) handleMetric(c mqtt.Client, topic string, pbMsg pb.Payl
 		newLabelName, metricName, err := getMetricName(metric)
 		if err != nil {
 			if metricName != "Device Control/Rebirth" && metricName != "Scan Rate ms" {
-				level.Error(logger).Log("msg", fmt.Sprintf("Error: %s %s %v", siteLabelValues["sp_edge_node_id"], metricName, err))
+				log.Errorf("Error: %s %s %v", siteLabelValues["sp_edge_node_id"], metricName, err)
 				e.counterMetrics[SPPushInvalidMetric].With(siteLabelValues).Inc()
 			}
 
@@ -401,14 +401,10 @@ func (e *spplugExporter) handleMetric(c mqtt.Client, topic string, pbMsg pb.Payl
 				newMetric)
 		}
 		if metricVal, err := convertMetricToFloat(metric); err != nil {
-			level.Debug(logger).Log("msg", fmt.Sprintf("Error %v converting data type for metric %s",
-				err, metricName))
+			log.Debugf("Error %v converting data type for metric %s", err, metricName)
 		} else {
-			level.Info(logger).Log("msg", fmt.Sprintf("%s: name (%s) value (%g) labels: (%s)",
-				eventString, metricName, metricVal, metricLabelValues))
-
-			level.Debug(logger).Log("msg", fmt.Sprintf("metriclabels: (%s) siteLabelValues: (%s)",
-				metricLabels, siteLabelValues))
+			log.Infof("%s: name (%s) value (%g) labels: (%s)", eventString, metricName, metricVal, metricLabelValues)
+			log.Debugf("metriclabels: (%s) siteLabelValues: (%s)", metricLabels, siteLabelValues)
 
 			e.metrics[metricName][labelIndex].prommetric.With(metricLabelValues).Set(metricVal)
 			e.metrics[SPLastTimePushedMetric][0].prommetric.With(siteLabelValues).SetToCurrentTime()
@@ -423,7 +419,7 @@ const (
 
 func (e *spplugExporter) handleEvent(topic string, pbMsg pb.Payload) {
 	if len(pbMsg.GetMetrics()) == 0 {
-		level.Info(logger).Log("msg", "skipping event without content")
+		log.Info("skipping event without content")
 		return
 	}
 
@@ -443,7 +439,7 @@ func (e *spplugExporter) handleEvent(topic string, pbMsg pb.Payload) {
 	case "String":
 		value = pbMsg.GetMetrics()[0].GetStringValue()
 	default:
-		level.Warn(logger).Log("msg", fmt.Sprintf("event type not supported: %s", dataTypeName[valueType]))
+		log.Warnf("event type not supported: %s", dataTypeName[valueType])
 	}
 
 	eventValue := fmt.Sprintf("%v", value)
@@ -527,7 +523,7 @@ func (e *spplugExporter) evaluateEdgeNode(c mqtt.Client, namespace string,
 		edgeNodeList[edgeNode] = true
 		e.reincarnate(namespace, group, nodeID)
 	} else {
-		level.Debug(logger).Log("msg", fmt.Sprintf("Known edge node: %s\n", edgeNode))
+		log.Debugf("Known edge node: %s\n", edgeNode)
 	}
 }
 
@@ -556,7 +552,7 @@ func (e *spplugExporter) reincarnate(namespace string, group string,
 
 		for {
 			if e.client.IsConnectionOpen() {
-				level.Info(logger).Log("msg", fmt.Sprintf("Reincarnate: %s\n", topic))
+				log.Infof("Reincarnate: %s\n", topic)
 
 				e.counterMetrics[SPReincarnationAttempts].
 					With(labelValues).Inc()
@@ -592,7 +588,7 @@ func (e *spplugExporter) initializeMetricsAndData() {
 	serviceLabels, _ := getServiceLabelSetandValues()
 	edgeNodeLabels := getNodeLabelSet()
 
-	level.Debug(logger).Log("msg", fmt.Sprintf(NewMetricString, SPPushTotalMetric))
+	log.Debugf(NewMetricString, SPPushTotalMetric)
 
 	e.counterMetrics[SPPushTotalMetric] = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -602,7 +598,7 @@ func (e *spplugExporter) initializeMetricsAndData() {
 		siteLabels,
 	)
 
-	level.Debug(logger).Log("msg", fmt.Sprintf(NewMetricString, SPLastTimePushedMetric))
+	log.Debugf(NewMetricString, SPLastTimePushedMetric)
 	var test prometheusmetric
 	test.prommetric = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
@@ -613,7 +609,7 @@ func (e *spplugExporter) initializeMetricsAndData() {
 	)
 	e.metrics[SPLastTimePushedMetric] = append(e.metrics[SPLastTimePushedMetric], test)
 
-	level.Debug(logger).Log("msg", fmt.Sprintf(NewMetricString, SPPushInvalidMetric))
+	log.Debugf(NewMetricString, SPPushInvalidMetric)
 
 	e.counterMetrics[SPPushInvalidMetric] = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -623,7 +619,7 @@ func (e *spplugExporter) initializeMetricsAndData() {
 		siteLabels,
 	)
 
-	level.Debug(logger).Log("msg", fmt.Sprintf(NewMetricString, SPConnectionCount))
+	log.Debugf(NewMetricString, SPConnectionCount)
 
 	e.counterMetrics[SPConnectionCount] = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -633,7 +629,7 @@ func (e *spplugExporter) initializeMetricsAndData() {
 		serviceLabels,
 	)
 
-	level.Debug(logger).Log("msg", fmt.Sprintf(NewMetricString, SPDisconnectionCount))
+	log.Debugf(NewMetricString, SPDisconnectionCount)
 
 	e.counterMetrics[SPDisconnectionCount] = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -643,7 +639,7 @@ func (e *spplugExporter) initializeMetricsAndData() {
 		serviceLabels,
 	)
 
-	level.Debug(logger).Log("msg", fmt.Sprintf(NewMetricString, SPReincarnationAttempts))
+	log.Debugf(NewMetricString, SPReincarnationAttempts)
 
 	e.counterMetrics[SPReincarnationAttempts] = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -653,7 +649,7 @@ func (e *spplugExporter) initializeMetricsAndData() {
 		edgeNodeLabels,
 	)
 
-	level.Debug(logger).Log("msg", fmt.Sprintf(NewMetricString, SPReincarnationFailures))
+	log.Debugf(NewMetricString, SPReincarnationFailures)
 
 	e.counterMetrics[SPReincarnationFailures] = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -663,7 +659,7 @@ func (e *spplugExporter) initializeMetricsAndData() {
 		edgeNodeLabels,
 	)
 
-	level.Debug(logger).Log("msg", fmt.Sprintf(NewMetricString, SPReincarnationSuccess))
+	log.Debugf(NewMetricString, SPReincarnationSuccess)
 
 	e.counterMetrics[SPReincarnationSuccess] = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -673,7 +669,7 @@ func (e *spplugExporter) initializeMetricsAndData() {
 		edgeNodeLabels,
 	)
 
-	level.Debug(logger).Log("msg", fmt.Sprintf(NewMetricString, SPReincarnationDelay))
+	log.Debugf(NewMetricString, SPReincarnationDelay)
 
 	e.counterMetrics[SPReincarnationDelay] = prometheus.NewCounterVec(
 		prometheus.CounterOpts{

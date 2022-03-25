@@ -7,14 +7,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/IHI-Energy-Storage/sparkpluggw/log"
 	"github.com/IHI-Energy-Storage/sparkpluggw/remotewrite"
 	"github.com/dubyte/promtail-client/promtail"
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/prometheus/common/promlog"
-	"github.com/prometheus/common/promlog/flag"
 	"gopkg.in/alecthomas/kingpin.v2"
 )
 
@@ -138,7 +135,6 @@ var (
 
 	progname = "sparkpluggw"
 	exporter *spplugExporter
-	logger   log.Logger
 )
 
 // lokiFields used to know valid fields that can be replaced for loki
@@ -149,17 +145,14 @@ var dropFields = make(map[string]struct{})
 
 func main() {
 	kingpin.CommandLine.HelpFlag.Short('h')
-	var promlogConfig promlog.Config
-	flag.AddFlags(kingpin.CommandLine, &promlogConfig)
+	log.AddFlags(kingpin.CommandLine)
 	kingpin.Parse()
-
-	logger = promlog.New(&promlogConfig)
 
 	var lokiClient promtail.Client
 	if *lokiEnabled {
 		for k := range *lokiFieldSubstitutions {
 			if _, ok := lokiFields[k]; !ok {
-				level.Warn(logger).Log("msg", fmt.Sprintf("'%s' is not a valid loki field to replace", k))
+				log.Warnf("'%s' is not a valid loki field to replace", k)
 				delete(*lokiFieldSubstitutions, k)
 			}
 		}
@@ -180,7 +173,7 @@ func main() {
 		var err error
 		lokiClient, err = promtail.NewClientProto(conf)
 		if err != nil {
-			level.Error(logger).Log("msg", err)
+			log.Error(err)
 			os.Exit(1)
 		}
 		defer lokiClient.Shutdown()
@@ -195,13 +188,13 @@ func main() {
 
 	if webInterfaceEnabled {
 		http.Handle(*metricsPath, promhttp.Handler())
-		level.Info(logger).Log("msg", fmt.Sprintf("Listening on %s", *listenAddress))
+		log.Infof("Listening on %s", *listenAddress)
 		wg.Add(1)
 		go func(wg *sync.WaitGroup) {
 			defer wg.Done()
 			err := http.ListenAndServe(*listenAddress, nil)
 			if err != nil {
-				level.Error(logger).Log("msg", err)
+				log.Error(err)
 				os.Exit(1)
 			}
 		}(&wg)
@@ -211,14 +204,14 @@ func main() {
 		rawURL := fmt.Sprintf("%s", *remoteWriteEndpoint)
 		c, err := remotewrite.Client(rawURL, *remoteWriteTimeout, *remoteWriteUserAgent, true)
 		if err != nil {
-			level.Error(logger).Log("msg", err)
+			log.Error(err)
 			os.Exit(1)
 		}
 		dropLabels := make(map[string]struct{})
 		for _, l := range *remoteWriteDropLabels {
 			dropLabels[l] = struct{}{}
 		}
-		w := remotewrite.Writer{Client: c, Logger: logger, Gatherer: prometheus.DefaultGatherer,
+		w := remotewrite.Writer{Client: c, Gatherer: prometheus.DefaultGatherer,
 			ExtraLabels: buildRemoteWriteLabels(*remoteWriteExtraLabels), LabelSubstitutions: *remoteWriteLabelSubstitutions,
 			DropLabels: dropLabels,
 		}
@@ -233,12 +226,12 @@ func main() {
 		}(&wg)
 	}
 
-	level.Info(logger).Log("msg", fmt.Sprintf("Connecting to %v", *brokerAddress))
+	log.Infof("Connecting to %v", *brokerAddress)
 
 	if *mqttConnectWithRetry == "true" {
 		connectWithRetry(exporter.client, connectMQTT)
 	} else if err := connectMQTT(exporter.client); err != nil {
-		level.Error(logger).Log("msg", fmt.Sprintf("%s", err))
+		log.Error(err)
 		os.Exit(1)
 	}
 

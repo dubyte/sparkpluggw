@@ -8,8 +8,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
+	"github.com/IHI-Energy-Storage/sparkpluggw/log"
+
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/prometheus/client_golang/prometheus"
@@ -21,8 +21,8 @@ import (
 )
 
 type Writer struct {
-	Client             remote.WriteClient
-	Logger             log.Logger
+	Client remote.WriteClient
+	//Logger             log.Logger
 	Gatherer           prometheus.Gatherer
 	ExtraLabels        []prompb.Label
 	LabelSubstitutions map[string]string
@@ -36,13 +36,13 @@ func (w Writer) Write() {
 
 	req, err := WriteRequest(w.Gatherer, timestamp, w.LabelSubstitutions, w.ExtraLabels, w.DropLabels)
 	if err != nil {
-		level.Error(w.Logger).Log("msg", fmt.Sprintf("error while building remote write request: %s", err))
+		log.Errorf("error while building remote write request: %s", err)
 		return
 	}
 
 	data, err := proto.Marshal(&req)
 	if err != nil {
-		level.Error(w.Logger).Log("msg", fmt.Sprintf("error while marshalling write request: %s", err))
+		log.Errorf("error while marshalling write request: %s", err)
 		return
 	}
 
@@ -51,7 +51,7 @@ func (w Writer) Write() {
 	// Store adds headers like the contentType, encoding.
 	err = w.Client.Store(context.Background(), compressed)
 	if err != nil {
-		level.Error(w.Logger).Log("msg", fmt.Sprintf("error while storing Time series: %s", err))
+		log.Errorf("error while storing Time series: %s", err)
 	}
 }
 

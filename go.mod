@@ -13,7 +13,9 @@ require (
 	github.com/prometheus/client_model v0.2.0
 	github.com/prometheus/common v0.30.1
 	github.com/prometheus/prometheus v1.8.2-0.20211001113022-b30db03f3565
+	github.com/sirupsen/logrus v1.7.0
 	github.com/tkanos/go-dtree v0.0.0-20210907201817-1f2ce05f77d2
+	golang.org/x/sys v0.0.0-20210906170528-6f6e22806c34
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 )
 
@@ -39,7 +41,6 @@ require (
 	go.uber.org/atomic v1.9.0 // indirect
 	golang.org/x/net v0.0.0-20210903162142-ad29c8ab022f // indirect
 	golang.org/x/oauth2 v0.0.0-20210819190943-2bc19b11175f // indirect
-	golang.org/x/sys v0.0.0-20210906170528-6f6e22806c34 // indirect
 	golang.org/x/text v0.3.6 // indirect
 	golang.org/x/time v0.0.0-20210723032227-1f47c861a9ac // indirect
 	google.golang.org/appengine v1.6.7 // indirect

@@ -1,14 +1,12 @@
 package main
 
 import (
-	"fmt"
-
+	"github.com/IHI-Energy-Storage/sparkpluggw/log"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
-	"github.com/go-kit/log/level"
 )
 
 var connectHandler mqtt.OnConnectHandler = func(client mqtt.Client) {
-	level.Info(logger).Log("msg", "Connected to MQTT")
+	log.Info("Connected to MQTT")
 
 	exporter.client.Subscribe(*topic, 2, exporter.receiveMessage)
 	exporter.client.IsConnected()
@@ -17,9 +15,8 @@ var connectHandler mqtt.OnConnectHandler = func(client mqtt.Client) {
 	exporter.counterMetrics[SPConnectionCount].With(labelValues).Inc()
 }
 
-var disconnectHandler mqtt.ConnectionLostHandler = func(_ mqtt.Client,
-	err error) {
-	level.Info(logger).Log("msg", fmt.Sprintf("Disconnected from MQTT (%s)", err.Error()))
+var disconnectHandler mqtt.ConnectionLostHandler = func(_ mqtt.Client, err error) {
+	log.Infof("Disconnected from MQTT (%s)", err)
 	_, labelValues := getServiceLabelSetandValues()
 	exporter.counterMetrics[SPDisconnectionCount].With(labelValues).Inc()
 }
