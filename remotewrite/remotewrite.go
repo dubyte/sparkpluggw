@@ -23,7 +23,6 @@ import (
 type Writer struct {
 	Client remote.WriteClient
 	//Logger             log.Logger
-	Gatherer           prometheus.Gatherer
 	ExtraLabels        []prompb.Label
 	LabelSubstitutions map[string]string
 	DropLabels         map[string]struct{}
@@ -34,7 +33,7 @@ type Writer struct {
 func (w Writer) Write() {
 	timestamp := time.Now().UnixNano() / int64(time.Millisecond)
 
-	req, err := WriteRequest(w.Gatherer, timestamp, w.LabelSubstitutions, w.ExtraLabels, w.DropLabels)
+	req, err := WriteRequest(timestamp, w.LabelSubstitutions, w.ExtraLabels, w.DropLabels)
 	if err != nil {
 		log.Errorf("error while building remote write request: %s", err)
 		return
@@ -94,10 +93,10 @@ func ClientFromConfig(cfg remote.ClientConfig, userAgent string) (remote.WriteCl
 
 //WriteRequest get the metric families from the gatherer using passed timestamp in unix miliseconds time and returns
 // a remoteWrite request
-func WriteRequest(g prometheus.Gatherer, timeStamp int64, labelSubstitutions map[string]string, extraLabels []prompb.Label, dropLabels map[string]struct{}) (prompb.WriteRequest, error) {
+func WriteRequest(timeStamp int64, labelSubstitutions map[string]string, extraLabels []prompb.Label, dropLabels map[string]struct{}) (prompb.WriteRequest, error) {
 	var req prompb.WriteRequest
 
-	mfs, err := g.Gather()
+	mfs, err := prometheus.DefaultGatherer.Gather()
 	if err != nil {
 		return req, fmt.Errorf("gatherer.Gather err: %w", err)
 	}

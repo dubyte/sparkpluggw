@@ -173,7 +173,7 @@ func main() {
 		var err error
 		lokiClient, err = promtail.NewClientProto(conf)
 		if err != nil {
-			log.Error(err)
+			log.Errorf("lokiClient init err: %s", err)
 			os.Exit(1)
 		}
 		defer lokiClient.Shutdown()
@@ -185,6 +185,10 @@ func main() {
 	var wg sync.WaitGroup
 
 	webInterfaceEnabled := !*disableWebInterface
+	if webInterfaceEnabled && *remoteWriteEnabled {
+		log.Error("remoteWrite can not be enabled when disableWebInterface is false.")
+		os.Exit(1)
+	}
 
 	if webInterfaceEnabled {
 		http.Handle(*metricsPath, promhttp.Handler())
@@ -211,7 +215,7 @@ func main() {
 		for _, l := range *remoteWriteDropLabels {
 			dropLabels[l] = struct{}{}
 		}
-		w := remotewrite.Writer{Client: c, Gatherer: prometheus.DefaultGatherer,
+		w := remotewrite.Writer{Client: c,
 			ExtraLabels: buildRemoteWriteLabels(*remoteWriteExtraLabels), LabelSubstitutions: *remoteWriteLabelSubstitutions,
 			DropLabels: dropLabels,
 		}
@@ -221,6 +225,15 @@ func main() {
 			defer wg.Done()
 			for {
 				w.Write()
+				mutex.Lock()
+				newRegistry := prometheus.NewRegistry()
+				prometheus.DefaultGatherer = newRegistry
+				prometheus.DefaultRegisterer = newRegistry
+				prometheus.MustRegister(prometheus.NewProcessCollector(prometheus.ProcessCollectorOpts{}))
+				prometheus.MustRegister(prometheus.NewGoCollector())
+				exporter.initializeMetricsAndData()
+				mutex.Unlock()
+				prometheus.MustRegister(exporter)
 				<-time.Tick(*remoteWriteEvery)
 			}
 		}(&wg)

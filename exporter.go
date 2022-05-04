@@ -274,7 +274,7 @@ func (e *spplugExporter) receiveMessage(client mqtt.Client, m mqtt.Message) {
 	topic = strings.Replace(topic, *edgNodePrefix, "", 1)
 
 	log.Debugf("Received message: %s", topic)
-	log.Debug(pbMsg.String())
+	// log.Debug(pbMsg.String())
 
 	if e.decisionTree != nil {
 		attr := message.Attributes(topic, pbMsg)
